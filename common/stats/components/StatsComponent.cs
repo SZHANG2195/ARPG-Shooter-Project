@@ -2,6 +2,7 @@ using Godot;
 using lethal.stats.data;
 using lethal.stats.logic;
 using lethal.stats.resources;
+using Microsoft.VisualBasic;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
@@ -127,10 +128,7 @@ public partial class StatsComponent : Node
 	{
 		_cachedFinalStats.Clear();
 
-		var allActiveModifiers = _modifierManager.GetAllActiveModifiers();
-
-		var (slotPools, statSpecificPools) = _GetScalars(allActiveModifiers);
-		var (slotAffixes, globalModifiers) = _GroupModifiers(allActiveModifiers);
+		var allModifiers = new List<StatModifier>(_modifierManager.GetAllActiveModifiers());
 
 		var workingFlatValues = new Dictionary<StatType, float>();
 		var workingIncreasedValues = new Dictionary<StatType, float>();
@@ -145,22 +143,41 @@ public partial class StatsComponent : Node
 			workingMoreValues[pair.Key] = 1.0f;
 		}
 
-		var resolvedGearFlatValues = _CalculateGearFlatValues(allActiveModifiers);
+		var resolvedGearFlatValues = _CalculateGearFlatValues(allModifiers);
 
-		foreach (var gearEntry in resolvedGearFlatValues)
-		{
-			StatType statType = gearEntry.Key.Stat;
-			float gearValue = gearEntry.Value;
+		var aggregatedGearFlats = new Dictionary<StatType, float>();
 
-			if (!workingFlatValues.ContainsKey(statType))
-			{
-				workingFlatValues[statType] = 0f;
-			}
+    	foreach (var gearEntry in resolvedGearFlatValues)
+    	{
+    	    StatType statType = gearEntry.Key.Stat;
+    	    float gearValue = gearEntry.Value;
 
-			workingFlatValues[statType] += gearValue;
-		}
+    	    if (!aggregatedGearFlats.ContainsKey(statType))
+    	    {
+    	        aggregatedGearFlats[statType] = 0f;
+    	    }
+    	    aggregatedGearFlats[statType] += gearValue;
 
-		_ExecutePreMultiplierDerived(allActiveModifiers, workingFlatValues);
+   	    	if (!workingFlatValues.ContainsKey(statType))
+   		    {
+   	         workingFlatValues[statType] = 0f;
+    	    }
+
+        	workingFlatValues[statType] += gearValue;
+    	}
+
+		var attributeModifiers = _ExecuteAttributeCalculations(allModifiers, workingFlatValues);
+		allModifiers.AddRange(attributeModifiers);
+
+		_ExecuteAttributeCalculations(allModifiers, workingFlatValues);
+
+		var conversionModifiers = _ExecuteStatConversions(allModifiers, workingFlatValues);
+		allModifiers.AddRange(conversionModifiers);
+
+		_ExecutePreMultiplierDerived(allModifiers, workingFlatValues);
+
+		var (slotPools, statSpecificPools) = _GetScalars(allModifiers);
+		var (slotAffixes, globalModifiers) = _GroupModifiers(allModifiers);
 
 		
 	}
@@ -391,8 +408,92 @@ public partial class StatsComponent : Node
 		}
 	}
 
-	private void _ExecuteSTatConversions(IEnumerable<StatModifier> allModifiers, Dictionary<StatType, float> workingFlatValues)
+	private IEnumerable<StatModifier> _ExecuteAttributeCalculations(IEnumerable<StatModifier> allModifiers, Dictionary<StatType, float> workingFlatValues)
 	{
-		
+		float currentStrength = workingFlatValues.GetValueOrDefault(StatType.Strength, 0.0f);
+		float currentAgility = workingFlatValues.GetValueOrDefault(StatType.Agility, 0.0f);
+		float currentIntelligence = workingFlatValues.GetValueOrDefault(StatType.Intelligence, 0.0f);
+
+		var attributeDerivedModifiers = AttributeCalculator.GetDerivedModifiers(
+        currentStrength, currentAgility, currentIntelligence, allModifiers);
+
+		foreach (var attributeModifier in attributeDerivedModifiers)
+		{
+			if (attributeModifier.Type == ModifierType.Flat)
+			{
+				foreach (var targetStat in attributeModifier.AffectedStats)
+				{
+					if (!workingFlatValues.ContainsKey(targetStat))
+					{
+						workingFlatValues[targetStat] = 0.0f;
+					}
+					
+					workingFlatValues[targetStat] += attributeModifier.GetValue();
+				}
+			}
+		}
+
+		return attributeDerivedModifiers;
+	}
+
+	private IEnumerable<StatModifier> _ExecuteStatConversions(IEnumerable<StatModifier> allModifiers, Dictionary<StatType, float> workingFlatValues)
+	{
+    	var generatedModifiers = new List<StatModifier>();
+    	var siphonedAmounts = new Dictionary<StatType, float>();
+
+    	foreach (var modifier in allModifiers)
+    	{
+    	    if (modifier is StatConversionModifier conversion && conversion.TargetSplitValues != null && conversion.TargetSplitValues.Count > 0)
+    	    {
+    	        StatType sourceStat = conversion.SourceStat;
+
+            
+            	if (!workingFlatValues.TryGetValue(sourceStat, out float sourceValue) || sourceValue <= 0.0f)
+            	{
+            	    continue;
+            	}
+
+            
+            	float alreadySiphonedAmount = siphonedAmounts.GetValueOrDefault(sourceStat, 0.0f);
+            	float availableSource = sourceValue - alreadySiphonedAmount;
+
+            	if (availableSource <= 0.0f) continue;
+
+            	float totalConvertedAmount = availableSource * conversion.Ratio;
+            	siphonedAmounts[sourceStat] = alreadySiphonedAmount + totalConvertedAmount;
+
+            
+            	foreach (var split in conversion.TargetSplitValues)
+            	{
+            	    StatType targetStat = split.Key;
+            	   float splitWeight = split.Value;
+            	    float finalConversionValue = totalConvertedAmount * splitWeight;
+
+            	    if (finalConversionValue > 0.0f)
+            	    {
+                    
+                	    var conversionMod = StatModifier.CreateSingleStaticModifier(
+                	        ModifierType.Flat,
+                	        finalConversionValue,
+                	        targetStat,
+                	        new ModifierSource(ModifierSourceCategory.Conversion, $"Converted from {sourceStat}")
+                	    );
+
+                    	generatedModifiers.Add(conversionMod);
+                	}
+            	}
+        	}
+    	}
+
+    	foreach (var siphon in siphonedAmounts)
+    	{
+    	    if (workingFlatValues.ContainsKey(siphon.Key))
+    	    {
+    	        workingFlatValues[siphon.Key] -= siphon.Value;
+    	        if (workingFlatValues[siphon.Key] < 0.0f) workingFlatValues[siphon.Key] = 0.0f;
+    	    }
+    	}
+
+    	return generatedModifiers;
 	}
 }

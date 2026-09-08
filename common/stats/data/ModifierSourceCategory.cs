@@ -14,5 +14,6 @@ public enum ModifierSourceCategory
 	Skill,
 	Buff,
 	Attribute,
-	MapAffix
+	MapAffix,
+	Conversion
 }
