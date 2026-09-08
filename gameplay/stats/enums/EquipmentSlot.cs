@@ -1,7 +1,4 @@
-using Godot;
-using System;
-
-namespace lethal.stats.data;
+namespace lethal.gameplay.stats.enums;
 public enum EquipmentSlot
 {
 	None,

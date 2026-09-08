@@ -1,7 +1,7 @@
-using Godot;
 using System;
+using lethal.gameplay.stats.enums;
 
-namespace lethal.stats.data;
+namespace lethal.gameplay.stats.modifiers;
 public readonly struct ModifierSource : IEquatable<ModifierSource>
 {
 	public ModifierSourceCategory Category { get; }

@@ -1,12 +1,11 @@
 using Godot;
-using lethal.stats.data;
-using lethal.stats.registry;
-using lethal.stats.resources;
+using lethal.common.registry;
+using lethal.gameplay.stats.enums;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 
-namespace lethal.stats.logic;
+namespace lethal.gameplay.stats.modifiers;
 public abstract class StatModifier
 {
 	public ModifierType Type;

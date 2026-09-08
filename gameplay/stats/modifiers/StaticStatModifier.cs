@@ -1,8 +1,4 @@
-using Godot;
-using lethal.stats.data;
-using System;
-
-namespace lethal.stats.logic;
+namespace lethal.gameplay.stats.modifiers;
 public class StaticStatModifier : StatModifier
 {
 	public float Value { get; set; }

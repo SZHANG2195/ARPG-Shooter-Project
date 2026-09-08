@@ -1,17 +1,13 @@
 using Godot;
-using lethal.stats.data;
-using lethal.stats.logic;
-using lethal.stats.resources;
-using Microsoft.VisualBasic;
+using lethal.gameplay.stats.data;
+using lethal.gameplay.stats.enums;
+using lethal.gameplay.stats.logic;
+using lethal.gameplay.stats.modifiers;
 using System;
-using System.Collections;
 using System.Collections.Generic;
-using System.ComponentModel.DataAnnotations;
 using System.Linq;
-using System.Reflection;
-using System.Runtime.CompilerServices;
 
-namespace lethal.stats.components;
+namespace lethal.gameplay.stats.components;
 public partial class StatsComponent : Node
 {
 	[Export]

@@ -1,6 +1,4 @@
-using Godot;
-using System;
-
+namespace lethal.gameplay.stats.enums;
 public enum StatPipelineFlags
 {
 	None = 0,

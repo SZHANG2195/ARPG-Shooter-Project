@@ -1,10 +1,6 @@
-using Godot;
-using lethal.stats.components;
-using lethal.stats.data;
-using lethal.stats.logic;
-using System;
+using lethal.gameplay.stats.enums;
 
-namespace lethal.stats.logic;
+namespace lethal.gameplay.stats.modifiers;
 public class DerivedStatModifier : StatModifier
 {
 	public StatType SourceStat { get; set; }

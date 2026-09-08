@@ -1,9 +1,9 @@
 using Godot;
-using lethal.stats.data;
+using lethal.gameplay.stats.enums;
 using System;
 using System.Collections.Generic;
 
-namespace lethal.stats.registry;
+namespace lethal.common.registry;
 public static class TagRegistry
 {
 	private static readonly Dictionary<StringName, HashSet<StatType>> _taggedStats = new();

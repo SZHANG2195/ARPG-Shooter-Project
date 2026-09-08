@@ -1,6 +1,6 @@
 using Godot;
-using System;
 
+namespace lethal.common.context;
 public readonly struct ContextEvaluator
 {
 	public Node Entity { get; }

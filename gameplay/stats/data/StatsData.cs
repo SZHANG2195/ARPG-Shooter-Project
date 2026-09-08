@@ -1,9 +1,8 @@
 using Godot;
-using System;
 using Godot.Collections;
-using lethal.stats.data;
+using lethal.gameplay.stats.enums;
 
-namespace lethal.stats.resources;
+namespace lethal.gameplay.stats.data;
 public partial class StatsData : Resource
 {
 	[Export]

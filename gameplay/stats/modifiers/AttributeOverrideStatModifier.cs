@@ -1,10 +1,8 @@
-using Godot;
-using lethal.stats.data;
-using lethal.stats.logic;
-using System;
 using System.Collections.Generic;
+using lethal.gameplay.stats.data;
+using lethal.gameplay.stats.enums;
 
-namespace lethal.stats.logic;
+namespace lethal.gameplay.stats.modifiers;
 public class AttributeOverrideStatModifier : StatModifier
 {
 	public Dictionary<StatType, float> SourceAttributeWeights { get; set; } = new();

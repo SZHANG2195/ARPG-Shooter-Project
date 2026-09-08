@@ -1,8 +1,6 @@
-using Godot;
-using lethal.stats.data;
-using System;
+using lethal.gameplay.stats.enums;
 
-namespace lethal.stats.data;
+namespace lethal.gameplay.stats.data;
 public class AttributeYieldDefinition
 {
     public StatType TargetStat { get; set; }

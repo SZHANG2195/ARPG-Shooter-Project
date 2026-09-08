@@ -1,9 +1,7 @@
 using Godot;
-using lethal.stats.data;
-using System;
-using System.Transactions;
+using lethal.gameplay.stats.enums;
 
-namespace lethal.stats.logic;
+namespace lethal.gameplay.stats.logic;
 public class ResourcePool 
 {
 	//We need the base Stat as our reference when initializing

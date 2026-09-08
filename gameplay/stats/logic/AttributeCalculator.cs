@@ -1,12 +1,9 @@
-using Godot;
-using lethal.stats.data;
-using System;
-using System.Collections;
 using System.Collections.Generic;
-using System.Diagnostics;
+using lethal.gameplay.stats.enums;
+using lethal.gameplay.stats.modifiers;
 
 
-namespace lethal.stats.logic;
+namespace lethal.gameplay.stats.logic;
 public static class AttributeCalculator
 {
 	public static IEnumerable<StatModifier> GetDerivedModifiers(

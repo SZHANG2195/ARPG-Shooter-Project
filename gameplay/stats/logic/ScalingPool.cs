@@ -1,10 +1,9 @@
 using Godot;
-using lethal.stats.data;
-using lethal.stats.logic;
-using System;
+using lethal.gameplay.stats.enums;
+using lethal.gameplay.stats.modifiers;
 
 
-namespace lethal.stats.resources;
+namespace lethal.gameplay.stats.logic;
 public class ScalingPool
 {
 	public float Increased { get; set; } = 0.0f;

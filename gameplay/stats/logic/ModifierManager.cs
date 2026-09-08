@@ -1,9 +1,7 @@
-using Godot;
-using lethal.stats.data;
-using System;
 using System.Collections.Generic;
+using lethal.gameplay.stats.modifiers;
 
-namespace lethal.stats.logic;
+namespace lethal.gameplay.stats.logic;
 public partial class ModifierManager
 {
 	private readonly Dictionary<ModifierSource, List<StatModifier>> _sourceModifiers = new();
