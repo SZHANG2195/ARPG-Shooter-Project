@@ -182,6 +182,8 @@ public partial class StatsComponent : Node
 		_PopulateWorkingMultipliers(workingIncreasedValues, workingMoreValues, baseOverrides, finalOverrides, globalModifiers);
 
 		_CalculatePrimaryStats(workingFlatValues, workingIncreasedValues, workingMoreValues, baseOverrides, finalOverrides);
+
+		_ExecutePostMultiplierDerivedAndFinalize(allModifiers, workingFlatValues, workingIncreasedValues, workingMoreValues, resolvedGearFlatValues);
 	}
 
 	private void _AddModifierToStatList(Dictionary<StatType, List<StatModifier>> modifierByStat, StatType statType, StatModifier modifier)
@@ -505,5 +507,46 @@ public partial class StatsComponent : Node
 				}
 			}
 		}
+	}
+
+	private void _ExecutePostMultiplierDerivedAndFinalize(
+    	IEnumerable<StatModifier> allModifiers,
+    	Dictionary<StatType, float> workingFlatValues,
+    	Dictionary<StatType, float> workingIncreasedValues,
+    	Dictionary<StatType, float> workingMoreValues,
+    	Dictionary<(EquipmentSlot Slot, StatType Stat), float> resolvedGearFlatValues)
+	{
+    	foreach (var modifier in allModifiers)
+    	{
+			float sourceValue = 0.0f;
+
+    	    if (modifier is DerivedStatModifier derivedModifier && derivedModifier.Phase == ModifierExecutionPhase.PostMultipliers)
+    	    {
+    	        if (derivedModifier.Slot != EquipmentSlot.None)
+				{
+					sourceValue = resolvedGearFlatValues.GetValueOrDefault((derivedModifier.Slot, derivedModifier.SourceStat), 0.0f);
+				}
+				else
+				{
+					sourceValue = _cachedFinalStats.GetValueOrDefault(derivedModifier.SourceStat, 0.0f);
+				}
+
+				float derivedFlatValue = sourceValue * derivedModifier.Ratio;
+
+				foreach (var targetStat in derivedModifier.AffectedStats)
+            	{
+                	float defaultBase = _baseStats.GetValueOrDefault(targetStat, 0.0f);
+                
+                	float existingFlats = workingFlatValues.GetValueOrDefault(targetStat, defaultBase) - defaultBase;
+                	float totalFlat = existingFlats + derivedFlatValue;
+
+                	float increased = workingIncreasedValues.GetValueOrDefault(targetStat, 0.0f);
+                	float more = workingMoreValues.GetValueOrDefault(targetStat, 1.0f);
+
+                	float finalDerivedStatValue = (defaultBase + totalFlat) * (1.0f + increased) * more;
+                	_cachedFinalStats[targetStat] = finalDerivedStatValue;
+            	}
+        	}
+    	}
 	}
 }
