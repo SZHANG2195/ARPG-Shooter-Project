@@ -4,10 +4,12 @@ using lethal.stats.logic;
 using lethal.stats.resources;
 using Microsoft.VisualBasic;
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 
 namespace lethal.stats.components;
 public partial class StatsComponent : Node
@@ -169,8 +171,6 @@ public partial class StatsComponent : Node
 		var attributeModifiers = _ExecuteAttributeCalculations(allModifiers, workingFlatValues);
 		allModifiers.AddRange(attributeModifiers);
 
-		_ExecuteAttributeCalculations(allModifiers, workingFlatValues);
-
 		var conversionModifiers = _ExecuteStatConversions(allModifiers, workingFlatValues);
 		allModifiers.AddRange(conversionModifiers);
 
@@ -179,7 +179,9 @@ public partial class StatsComponent : Node
 		var (slotPools, statSpecificPools) = _GetScalars(allModifiers);
 		var (slotAffixes, globalModifiers) = _GroupModifiers(allModifiers);
 
-		
+		_PopulateWorkingMultipliers(workingIncreasedValues, workingMoreValues, baseOverrides, finalOverrides, globalModifiers);
+
+		_CalculatePrimaryStats(workingFlatValues, workingIncreasedValues, workingMoreValues, baseOverrides, finalOverrides);
 	}
 
 	private void _AddModifierToStatList(Dictionary<StatType, List<StatModifier>> modifierByStat, StatType statType, StatModifier modifier)
@@ -314,74 +316,29 @@ public partial class StatsComponent : Node
 		return resolvedLocalGearValues;
 	}
 
-	private void _CalculateFinalStats(Dictionary<StatType, float> resolvedGearFlatValues, Dictionary<StatType, List<StatModifier>> globalModifiers)
+	private void _CalculatePrimaryStats(
+    	Dictionary<StatType, float> workingFlatValues,
+    	Dictionary<StatType, float> workingIncreasedValues,
+    	Dictionary<StatType, float> workingMoreValues,
+    	Dictionary<StatType, float> baseOverrides,
+ 		Dictionary<StatType, float> finalOverrides)
 	{
-		foreach (var pair in _baseStats)
-		{
-			var statType = pair.Key;
-			var defaultBaseValue = pair.Value;
+    	foreach (var pair in _baseStats)
+    	{
+        	var statType = pair.Key;
+        	float defaultBaseValue = pair.Value;
 
-			float flatValue = 0.0f;
-			float increasedMultiplier = 0.0f;
-			float moreMultiplier = 1.0f;
+        	float effectiveBase = baseOverrides.GetValueOrDefault(statType, defaultBaseValue);
+        	float flatValue = workingFlatValues.GetValueOrDefault(statType, defaultBaseValue) - defaultBaseValue;
+        	float increasedMultiplier = workingIncreasedValues.GetValueOrDefault(statType, 0.0f);
+        	float moreMultiplier = workingMoreValues.GetValueOrDefault(statType, 1.0f);
 
-			float? baseOverride = null;
-			float? finalOverride = null;
+        	float standardCalculation = (effectiveBase + flatValue) * (1.0f + increasedMultiplier) * moreMultiplier;
 
-			if (resolvedGearFlatValues.TryGetValue(statType, out var gearFlat))
-			{
-				flatValue += gearFlat;
-			}
-
-			if (globalModifiers.TryGetValue(statType, out var modifiers))
-			{
-				foreach (var modifier in modifiers)
-				{
-					switch (modifier.Type)
-					{
-						case ModifierType.BaseOverride:
-							baseOverride = modifier.GetValue();
-							break;
-						case ModifierType.Flat:
-							flatValue += modifier.GetValue();
-							break;
-						case ModifierType.Increased:
-							increasedMultiplier += modifier.GetValue();
-							break;
-						case ModifierType.More:
-							moreMultiplier *= 1.0f + modifier.GetValue();
-							break;
-						case ModifierType.FinalOverride:
-							if (finalOverride != null)
-							{
-								string warning = $"[StatsComponent] Warning: Multipler FinalOverrides found for {statType}! '{modifier.Source} is overriding existing value '{finalOverride.Value}'.";
-								#if DEBUG
-								throw new InvalidOperationException(warning);
-								#else
-								GD.PrintErr(warning);
-								#endif
-							}
-							
-							finalOverride = modifier.GetValue();
-							break;
-						default:
-							string errorMsg = $"[StatsComponent] Error: Unhandled ModifierType '{modifier.Type}' passed to global modifiers!";
-							#if DEBUG
-							throw new InvalidOperationException(errorMsg);
-							#else
-							GD.PrintErr(errorMsg);
-							break;
-							#endif
-					}
-				}
-			}
-
-			float effectiveBase = baseOverride ?? defaultBaseValue;
-			float standardCalculation = (effectiveBase + flatValue) * (1.0f + increasedMultiplier) * moreMultiplier;
-
-			float finalValue = finalOverride ?? standardCalculation;
-			_cachedFinalStats[statType] = finalValue;
-		}
+        	float finalValue = finalOverrides.TryGetValue(statType, out var overrideVal) ? overrideVal : standardCalculation;
+        
+        	_cachedFinalStats[statType] = finalValue;
+    	}
 	}
 
 	private void _ExecutePreMultiplierDerived(IEnumerable<StatModifier> allModifiers, Dictionary<StatType, float> workingFlatValues)
@@ -495,5 +452,58 @@ public partial class StatsComponent : Node
     	}
 
     	return generatedModifiers;
+	}
+
+	public void _PopulateWorkingMultipliers(
+		Dictionary<StatType, float> workingIncreasedValues,
+		Dictionary<StatType, float> workingMoreValues,
+		Dictionary<StatType, float> baseOverrides,
+		Dictionary<StatType, float> finalOverrides,
+		Dictionary<StatType, List<StatModifier>> globalModifiers)
+	{
+		foreach (var pair in globalModifiers)
+		{
+			StatType statType = pair.Key;
+			var modifiers = pair.Value;
+
+			foreach (var modifier in modifiers)
+			{
+				switch (modifier.Type)
+				{
+					case ModifierType.Increased:
+						if (!workingIncreasedValues.ContainsKey(statType)) workingIncreasedValues[statType] = 0.0f;
+						workingIncreasedValues[statType] += modifier.GetValue();
+						break;
+					case ModifierType.More:
+						if (!workingMoreValues.ContainsKey(statType)) workingMoreValues[statType] = 0.0f;
+						workingMoreValues[statType] += modifier.GetValue();
+						break;
+					case ModifierType.BaseOverride:
+						if (baseOverrides.ContainsKey(statType))
+                    	{
+                        	string warning = $"[StatsComponent] Warning: Multiple BaseOverrides found for {statType}! '{modifier.Source}' is overriding existing base value.";
+                        	#if DEBUG
+                        	throw new InvalidOperationException(warning);
+                        	#else
+                        	GD.PrintErr(warning);
+                        	#endif
+                    	}
+						baseOverrides[statType] = modifier.GetValue();
+                    	break;
+					case ModifierType.FinalOverride:
+						if (finalOverrides.ContainsKey(statType))
+                    	{
+                    	    string warning = $"[StatsComponent] Warning: Multiple FinalOverrides found for {statType}! '{modifier.Source}' is overriding existing final value.";
+                    	    #if DEBUG
+                    	    throw new InvalidOperationException(warning);
+                    	    #else
+                    	    GD.PrintErr(warning);
+                    	    #endif
+                    	}
+                    	finalOverrides[statType] = modifier.GetValue();
+						break;
+				}
+			}
+		}
 	}
 }
