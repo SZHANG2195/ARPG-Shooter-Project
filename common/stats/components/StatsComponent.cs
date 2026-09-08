@@ -477,7 +477,7 @@ public partial class StatsComponent : Node
 						workingIncreasedValues[statType] += modifier.GetValue();
 						break;
 					case ModifierType.More:
-						if (!workingMoreValues.ContainsKey(statType)) workingMoreValues[statType] = 0.0f;
+						if (!workingMoreValues.ContainsKey(statType)) workingMoreValues[statType] = 1.0f;
 						workingMoreValues[statType] += modifier.GetValue();
 						break;
 					case ModifierType.BaseOverride:
