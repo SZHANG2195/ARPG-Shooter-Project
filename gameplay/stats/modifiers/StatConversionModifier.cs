@@ -1,15 +1,15 @@
 using System.Collections.Generic;
-using lethal.gameplay.stats.enums;
+using lethal.core.persistence.stat_identity;
 
 namespace lethal.gameplay.stats.modifiers;
 public class StatConversionModifier : StatModifier
 {
-	public StatType SourceStat { get; set; }
+	public StatId SourceStat { get; set; }
 	public float Ratio { get; set; }
 
-	private Dictionary<StatType, float> _targetSplitValues = new();
+	private Dictionary<StatId, float> _targetSplitValues = new();
 
-	public Dictionary<StatType, float> TargetSplitValues
+	public Dictionary<StatId, float> TargetSplitValues
 	{
 		get => _targetSplitValues;
 		set

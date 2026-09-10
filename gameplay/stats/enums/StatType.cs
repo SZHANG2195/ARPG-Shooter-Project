@@ -19,7 +19,7 @@ public enum StatType {
 
     //Ammo = 300
     MaxAmmo = 300,
-    EnergyCost = 301,
+    FuelCost = 301,
     ReloadSpeed = 302,
 
     //Damage Types = 400
@@ -36,6 +36,7 @@ public enum StatType {
     LifeGainOnHit = 503,
     FuelGainOnHit = 504,
     RageOnHit = 505,
+    RageOnKill = 506,
 
     //Attack Behavior = 600
     ProjectileSpeed = 600,
@@ -67,7 +68,9 @@ public enum StatType {
     PoisonDuration = 718,
     PoisonCap = 719,
     StunBuildup = 720,
-    RootBuildup = 721,
+    StunDuration = 721,
+    RootBuildup = 722,
+    RootDuration = 723,
 
     //Defenses = 800
     Armour = 800,
@@ -81,6 +84,7 @@ public enum StatType {
     CryoResistance = 808,
     EnergyResistance = 809,
     VoidResistance = 810,
+    RageWhenHit = 811,
 
     //Damage Taken Modifiers = 900
     PhysicalDamageTaken = 900, 
@@ -96,9 +100,9 @@ public enum StatType {
 
     //Crowd Control = 1000
     StunThreshold = 1000,
-    StunDuration = 1001,
-    AilmentThreshold = 1002,
-    AilmentDuration = 1003,
+    StunRecovery = 1001,
+    AfflictionThreshold = 1002,
+    AfflictionDuration = 1003,
     SlowResistance = 1004,
 
     //Movement = 1100

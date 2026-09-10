@@ -1,5 +1,6 @@
 using Godot;
 using lethal.common.registry;
+using lethal.core.persistence.stat_identity;
 using lethal.gameplay.stats.enums;
 using System;
 using System.Collections.Generic;
@@ -14,7 +15,7 @@ public abstract class StatModifier
 	public AffixType AffixType = AffixType.None;
 	public ModifierScope Scope = ModifierScope.Stat;
 	public string ConditionKey { get; set; } = string.Empty;
-	public List<StatType> AffectedStats { get; set; } = new();
+	public List<StatId> AffectedStats { get; set; } = new();
 
 
 	public virtual bool isExpired => false;
@@ -22,16 +23,22 @@ public abstract class StatModifier
 	
 	public abstract float GetValue();
 
-	public static StaticStatModifier CreateSingleStaticModifier(
+	public static StaticStatModifier? CreateSingleStaticModifier(
 		ModifierType type, 
 		float value, 
-		StatType stat = StatType.None, 
+		StatId? stat = null, 
 		ModifierSource source = default, 
 		EquipmentSlot slot = EquipmentSlot.None, 
 		AffixType affixType = AffixType.None, 
 		ModifierScope scope = ModifierScope.Stat, 
 		string conditionKey = "")
 	{
+		if (stat is null)
+		{
+			GD.PrintErr($"[Modifiers] Warning: Attempted to create a single static modifier of type {type} with no stat type!");
+			return null;
+		}
+
         var modifier = new StaticStatModifier
         {
 			//Modifier defaults
@@ -47,16 +54,11 @@ public abstract class StatModifier
 			
 		};
 
-		if (stat == StatType.None)
-		{
-			GD.PrintErr($"[Modifiers] Warning: Created single static modifier of type {type} with StatType.None!");
-		}
-
-		modifier.AffectedStats.Add(stat);
+		modifier.AffectedStats.Add(stat.Value);
 		return modifier;
 	}
 
-	public static StaticStatModifier CreateTaggedStaticModifier(
+	public static StaticStatModifier? CreateTaggedStaticModifier(
 		ModifierType type, 
 		float value, 
 		StringName tag, 
@@ -66,6 +68,12 @@ public abstract class StatModifier
 		ModifierScope scope = ModifierScope.Stat, 
 		string conditionKey = "")
 	{
+		if (tag == null || tag.IsEmpty || tag == "none")
+    	{
+        	GD.PrintErr($"[Modifiers] Warning: Attempted to create a tagged static modifier with an invalid or 'none' tag of type {type}!");
+        	return null;
+    	}
+
 		var modifier = new StaticStatModifier
 		{
 			Type = type,
@@ -78,21 +86,15 @@ public abstract class StatModifier
 			Value = value,
 		};
 
-		if (tag == null || tag.IsEmpty || tag == "none")
-    	{
-        	GD.PrintErr($"[Modifiers] Warning: Created a tagged static modifier with an invalid or 'none' tag of type {type}!");
-        	return modifier;
-    	}
-
-		modifier.AffectedStats.AddRange(TagRegistry.GetStatsByTag(tag));
+		modifier.AffectedStats.AddRange(StatDefinitionRegistry.GetByTag(tag));
 		return modifier;
 	}
 
-	public static DerivedStatModifier CreateSingleDerivedModifier(
+	public static DerivedStatModifier? CreateSingleDerivedModifier(
 		ModifierType type, 
 		float ratio, 
-		StatType sourceStat, 
-		StatType targetStat, 
+		StatId? sourceStat, 
+		StatId? targetStat, 
 		ModifierExecutionPhase phase, 
 		ModifierSource source, 
 		EquipmentSlot slot = EquipmentSlot.None, 
@@ -100,6 +102,12 @@ public abstract class StatModifier
 		ModifierScope scope = ModifierScope.Stat, 
 		string conditionKey = "")
 	{
+		if (sourceStat is null || targetStat is null)
+		{
+			GD.PrintErr($"[Modifiers] Warning: Attempted to create a single derived modifier of type {type} with no source or target stat!");
+			return null;
+		}
+
 		var modifier = new DerivedStatModifier
 		{
 			Type = type,
@@ -109,24 +117,19 @@ public abstract class StatModifier
 			Scope = scope,
 			ConditionKey = conditionKey,
 
-			SourceStat = sourceStat,
+			SourceStat = sourceStat.Value,
 			Ratio = ratio,
 			Phase = phase
 		};
 
-		if (sourceStat == StatType.None || targetStat == StatType.None)
-		{
-			GD.PrintErr($"[Modifiers] Warning: Created single derived modifier of type {type} with StatType.None!");
-		}
-
-		modifier.AffectedStats.Add(targetStat);
+		modifier.AffectedStats.Add(targetStat.Value);
 		return modifier;
 	}
 
-	public static DerivedStatModifier CreateTaggedDerivedModifier(
+	public static DerivedStatModifier? CreateTaggedDerivedModifier(
 		ModifierType type, 
 		float ratio, 
-		StatType sourceStat, 
+		StatId? sourceStat, 
 		StringName tag,
 		ModifierExecutionPhase phase, 
 		ModifierSource source, 
@@ -135,6 +138,13 @@ public abstract class StatModifier
 		ModifierScope scope = ModifierScope.Stat, 
 		string conditionKey = "")
 	{
+		if (sourceStat is null || tag == null || tag.IsEmpty || tag == "none")
+    	{
+        	GD.PrintErr($"[Modifiers] Warning: Attempted to create tagged derived modifier of type {type} with " +
+            $"{(sourceStat is null ? "no source stat" : "an invalid or 'none' tag")}!");
+        	return null;
+    	}
+
 		var modifier = new DerivedStatModifier
 		{
 			Type = type,
@@ -144,31 +154,32 @@ public abstract class StatModifier
 			Scope = scope,
 			ConditionKey = conditionKey,
 
-			SourceStat = sourceStat,
+			SourceStat = sourceStat.Value,
 			Ratio = ratio,
 			Phase = phase
 		};
 
-		if (sourceStat == StatType.None || tag == null || tag.IsEmpty || tag == "none" )
-		{
-			GD.PrintErr($"[Modifiers] Warning: Created a tagged derived modifier of type {type} with StatType.None!");
-		}
-
-		modifier.AffectedStats.AddRange(TagRegistry.GetStatsByTag(tag));
+		modifier.AffectedStats.AddRange(StatDefinitionRegistry.GetByTag(tag));
 		return modifier;
 	}
 
-	public static StatConversionModifier CreateSingleConversionModifier(
+	public static StatConversionModifier? CreateSingleConversionModifier(
 		ModifierType type, 
 		float ratio, 
-		StatType sourceStat, 
-		StatType targetStat, 
+		StatId? sourceStat, 
+		StatId? targetStat, 
 		ModifierSource source, 
 		EquipmentSlot slot = EquipmentSlot.None, 
 		AffixType affixType = AffixType.None,
 		ModifierScope scope = ModifierScope.Stat, 
 		string conditionKey = "")
 	{
+		if (sourceStat is null || targetStat is null)
+		{
+			GD.PrintErr($"[Modifiers] Warning: Attempted to create a single conversion modifier of type {type} with no source or target stat!");
+			return null;
+		}
+
 		var modifier = new StatConversionModifier
 		{
 			Type = type,
@@ -178,34 +189,36 @@ public abstract class StatModifier
 			Scope = scope,
 			ConditionKey = conditionKey,
 
-			SourceStat = sourceStat,
+			SourceStat = sourceStat.Value,
 			Ratio = ratio,
-			TargetSplitValues = new Dictionary<StatType, float>
+			TargetSplitValues = new Dictionary<StatId, float>
 			{
-				{ targetStat, 1.0f }
+				{ targetStat.Value, 1.0f }
 			}
 		};
-
-		if (sourceStat == StatType.None || targetStat == StatType.None)
-		{
-			GD.PrintErr($"[Modifiers] Warning: Created single conversion modifier of type {type} with StatType.None!");
-		}
 
 		return modifier;
 	}
 
-	public static StatConversionModifier CreateTaggedConversionModifier(
+	public static StatConversionModifier? CreateTaggedConversionModifier(
 		ModifierType type, 
 		float ratio, 
-		StatType sourceStat, 
+		StatId? sourceStat, 
 		StringName tag,
 		ModifierSource source, 
 		EquipmentSlot slot = EquipmentSlot.None, 
 		AffixType affixType = AffixType.None,
 		ModifierScope scope = ModifierScope.Stat, 
 		string conditionKey = "",
-		Dictionary<StatType, float> manualSplitValues = null)
+		Dictionary<StatId, float>? manualSplitValues = null)
 	{
+		if (sourceStat is null || tag == null || tag.IsEmpty || tag == "none" )
+		{
+        	GD.PrintErr($"[Modifiers] Warning: Attempted to create tagged conversion modifier of type {type} with " +
+            $"{(sourceStat is null ? "no source stat" : "an invalid or 'none' tag")}!");
+        	return null;
+    	}
+
 		var modifier = new StatConversionModifier
 		{
 			Type = type,
@@ -215,23 +228,18 @@ public abstract class StatModifier
 			Scope = scope,
 			ConditionKey = conditionKey,
 
-			SourceStat = sourceStat,
+			SourceStat = sourceStat.Value,
 			Ratio = ratio
 		};
 
-		if (sourceStat == StatType.None || tag == null || tag.IsEmpty || tag == "none" )
-		{
-			GD.PrintErr($"[Modifiers] Warning: Created a tagged conversion modifier of type {type} with StatType.None!");
-		}
-
-		var resolvedStats = TagRegistry.GetStatsByTag(tag);
+		var resolvedStats = StatDefinitionRegistry.GetByTag(tag);
 		if (resolvedStats.Count() == 0)
     	{
         	GD.PrintErr($"[Modifiers] Warning: Tagged conversion modifier found no stats for tag '{tag}'!");
         	return modifier;
     	}
 
-		Dictionary<StatType, float> finalSplitValues;
+		Dictionary<StatId, float> finalSplitValues;
 
 		if (manualSplitValues != null && manualSplitValues.Count > 0)
 		{
@@ -267,7 +275,7 @@ public abstract class StatModifier
 		else
 		{
 			float splitWeightPerStat = 1.0f / resolvedStats.Count();
-			finalSplitValues = new Dictionary<StatType, float>();
+			finalSplitValues = new Dictionary<StatId, float>();
 
 			foreach (var stat in resolvedStats)
 			{

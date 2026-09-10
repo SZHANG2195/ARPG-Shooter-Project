@@ -1,11 +1,11 @@
 using System.Collections.Generic;
+using lethal.core.persistence.stat_identity;
 using lethal.gameplay.stats.data;
-using lethal.gameplay.stats.enums;
 
 namespace lethal.gameplay.stats.modifiers;
 public class AttributeOverrideStatModifier : StatModifier
 {
-	public Dictionary<StatType, float> SourceAttributeWeights { get; set; } = new();
+	public Dictionary<StatId, float> SourceAttributeWeights { get; set; } = new();
 	public List<AttributeYieldDefinition> TargetYields { get; set; } = new();
 
 	public bool SuppressDefaultYields { get; set; } = true;

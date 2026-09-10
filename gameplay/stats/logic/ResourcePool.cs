@@ -1,15 +1,15 @@
 using Godot;
-using lethal.gameplay.stats.enums;
+using lethal.core.persistence.stat_identity;
 
 namespace lethal.gameplay.stats.logic;
 public class ResourcePool 
 {
 	//We need the base Stat as our reference when initializing
-	public StatType MaxStat { get; private set; }
+	public StatId MaxStat { get; private set; }
 	public float Current { get; private set; }
 	public float Reserved { get; private set; }
 
-	public ResourcePool(StatType maxStat)
+	public ResourcePool(StatId maxStat)
 	{
 		MaxStat = maxStat;
 		Current = 0.0f;

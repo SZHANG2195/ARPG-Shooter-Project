@@ -1,4 +1,6 @@
 using System.Collections.Generic;
+using lethal.core.persistence;
+using lethal.core.persistence.stat_identity;
 using lethal.gameplay.stats.enums;
 using lethal.gameplay.stats.modifiers;
 
@@ -12,15 +14,15 @@ public static class AttributeCalculator
 		float intelligence,
 		IEnumerable<StatModifier> activeModifers = null)
 	{
-		var suppressedAttributes = new HashSet<StatType>();
+		var suppressedAttributes = new HashSet<StatId>();
 
-		float GetAttributeValue(StatType stat) => stat switch
+		float GetAttributeValue(StatId stat)
         {
-            StatType.Strength => strength,
-            StatType.Agility => agility,
-            StatType.Intelligence => intelligence,
-            _ => 0.0f
-        };
+            if (stat == Stats.Strength) return strength;
+            if (stat == Stats.Agility) return agility;
+            if (stat == Stats.Intelligence) return intelligence;
+            return 0.0f;
+        }
 
 		if (activeModifers != null)
 		{
@@ -32,7 +34,7 @@ public static class AttributeCalculator
 
 					foreach(var sourceKvp in overrideModifier.SourceAttributeWeights)
 					{
-						StatType sourceAttribute = sourceKvp.Key;
+						StatId sourceAttribute = sourceKvp.Key;
 						float weight = sourceKvp.Value;
 
 						combinedPoolValue += GetAttributeValue(sourceAttribute) * weight;
@@ -51,8 +53,8 @@ public static class AttributeCalculator
                         {
                             yield return StatModifier.CreateSingleStaticModifier(
                                 targetKvp.Type,
-                                finalValue, 
-                                targetKvp.TargetStat, 
+                                finalValue,
+                                targetKvp.TargetStat,
                                 new ModifierSource(ModifierSourceCategory.Attribute, "Custom Scaling Rule")
                             );
                         }
@@ -61,26 +63,26 @@ public static class AttributeCalculator
 			}
 		}
 
-		if (strength > 0 && !suppressedAttributes.Contains(StatType.Strength))
+		if (strength > 0 && !suppressedAttributes.Contains(Stats.Strength))
         {
             yield return StatModifier.CreateSingleStaticModifier(
-				ModifierType.Flat, 
-				strength * 5f, StatType.MaxHealth, 
-				new(ModifierSourceCategory.Attribute, "Strength"));
+                ModifierType.Flat,
+                strength * 5f, Stats.Strength,
+                new(ModifierSourceCategory.Attribute, "Strength"));
         }
-        if (agility > 0 && !suppressedAttributes.Contains(StatType.Agility))
+        if (agility > 0 && !suppressedAttributes.Contains(Stats.Agility))
         {
             yield return StatModifier.CreateSingleStaticModifier(
-				ModifierType.Increased, 
-				agility * 0.5f, StatType.MovementSpeedWhileFiring, 
-				new(ModifierSourceCategory.Attribute, "Agility"));
+                ModifierType.Increased,
+                agility * 0.5f, Stats.Agility,
+                new(ModifierSourceCategory.Attribute, "Agility"));
         }
-        if (intelligence > 0 && !suppressedAttributes.Contains(StatType.Intelligence))
+        if (intelligence > 0 && !suppressedAttributes.Contains(Stats.Intelligence))
         {
             yield return StatModifier.CreateSingleStaticModifier(
-				ModifierType.Flat, 
-				intelligence * 5f, StatType.MaxFuel, 
-				new(ModifierSourceCategory.Attribute, "Intelligence"));
+                ModifierType.Flat,
+                intelligence * 5f, Stats.Intelligence,
+                new(ModifierSourceCategory.Attribute, "Intelligence"));
         }
 	}
 }
