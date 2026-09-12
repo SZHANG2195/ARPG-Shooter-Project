@@ -14,7 +14,7 @@ namespace lethal.gameplay.stats.components;
 public partial class StatsComponent : Node
 {
 	[Export]
-	public StatsData CharacterData { get; set; }
+	public required StatsData CharacterData { get; set; }
 	private Dictionary<StatId, float> _baseStats = new();
 	private Dictionary<StatId, ResourcePool> _resourcePools = new();
 	private readonly ModifierManager _modifierManager = new();
@@ -235,9 +235,9 @@ public partial class StatsComponent : Node
 
 	private IEnumerable<StatModifier> _ExecuteAttributeCalculations(IEnumerable<StatModifier> allModifiers, Dictionary<StatId, float> workingFlatValues)
 	{
-    	float currentStrength = workingFlatValues.GetValueOrDefault(new StatId("strength"), 0.0f);
-    	float currentAgility = workingFlatValues.GetValueOrDefault(new StatId("agility"), 0.0f);
-    	float currentIntelligence = workingFlatValues.GetValueOrDefault(new StatId("intelligence"), 0.0f);
+    	float currentStrength = workingFlatValues.GetValueOrDefault(Stats.Strength, 0.0f);
+    	float currentAgility = workingFlatValues.GetValueOrDefault(Stats.Agility, 0.0f);
+    	float currentIntelligence = workingFlatValues.GetValueOrDefault(Stats.Intelligence, 0.0f);
 
     	var attributeDerivedModifiers = AttributeCalculator.GetDerivedModifiers(
     	currentStrength, currentAgility, currentIntelligence, allModifiers);

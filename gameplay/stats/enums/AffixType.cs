@@ -4,5 +4,6 @@ public enum AffixType
 	None,
 	Prefix,
 	Suffix,
+	Implicit,
 	Unique
 }

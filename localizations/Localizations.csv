@@ -1,0 +1,127 @@
+id,en
+stat.affliction_duration,Affliction Duration
+stat.affliction_threshold,Affliction Threshold
+stat.agility,Agility
+stat.area_of_effect,Area of Effect
+stat.arming_time,Arming Time
+stat.armour,Armour
+stat.attack_speed,Attack Speed
+stat.barrier_efficiency,Barrier Efficiency
+stat.barrier_regen,Barrier Regen
+stat.bleed_chance,Chance to Bleed
+stat.bleed_duration,Bleed Duration
+stat.bleed_magnitude,Bleed Magnitude
+stat.block_chance,Block Chance
+stat.chain_count,Chain Count
+stat.charged_chance,Charged Chance
+stat.charged_duration,Charged Duration
+stat.charged_magnitude,Charged Magnitude
+stat.chill_chance,Chance to Chill
+stat.chill_duration,Chill Duration
+stat.cooldown_recovery_rate,Cooldown Recovery Rate
+stat.crit_chance,Critical Hit Chance
+stat.crit_damage,Critical Hit Damage
+stat.cryo_damage,Cryo Damage
+stat.cryo_damage_reduction,Cryo Damage Reduction
+stat.cryo_damage_taken,Cryo Damage Taken
+stat.cryo_resistance,Cryo Resistance
+stat.energy_damage,Energy Damage
+stat.energy_damage_reduction,Energy Damage Reduction
+stat.energy_damage_taken,Energy Damage Taken
+stat.energy_resistance,Energy Resistance
+stat.evasion,Evasion
+stat.fire_damage,Fire Damage
+stat.fire_damage_reduction,Fire Damage Reduction
+stat.fire_damage_taken,Fire Damage Taken
+stat.fire_resistance,Fire Resistance
+stat.freeze_buildup,Freeze Buildup
+stat.freeze_duration,Freeze Duration
+stat.fuel_cost,Fuel Cost
+stat.fuel_gain_on_hit,Gain {0} Fuel on Hit
+stat.fuel_regen,Fuel Regeneration
+stat.glancing_chance,Chance for Glancing Blow
+stat.health_regen,Health Regeneration
+stat.ignite_chance,Chance to Ignite
+stat.ignite_duration,Ignite Duration
+stat.ignite_magnitude,Ignite Magnitude
+stat.intelligence,Intelligence
+stat.knockback_force,Knockback Force
+stat.life_gain_on_hit,Gain {0} Life on Hit
+stat.max_ammo,Maximum Ammo
+stat.max_barrier,Maximum Barrier
+stat.max_fuel,Maximum Fuel
+stat.max_health,Maximum Health
+stat.max_rage,Maximum Rage
+stat.movement_speed,Movement Speed
+stat.movement_speed_while_firing,Movement Speed While Firing
+stat.physical_damage,Physical Damage
+stat.physical_damage_reduction,Physical Damage Reduction
+stat.physical_damage_taken,Physical Damage Taken
+stat.pierce_count,Chance to Pierce
+stat.poison_cap,Poison Limit
+stat.poison_chance,Chance to Poison
+stat.poison_duration,Poison Duration
+stat.poison_magnitude,Poison Magnitude
+stat.projectile_count,Projectile Count
+stat.projectile_speed,Projectile Speed
+stat.rage_on_hit,Gain {0} Rage on Hit
+stat.rage_on_kill,Gain {0} Rage on Kill
+stat.rage_regen,Rage Regeneration
+stat.rage_when_hit,Gain {0} Rage When Hit
+stat.reload_speed,Reload Speed
+stat.ricochet_count,Chance to Ricochet
+stat.root_buildup,Root Buildup
+stat.root_duration,Root Duration
+stat.slow_resistance,Slow Resistance
+stat.strength,Strength
+stat.stun_buildup,Stun Buildup
+stat.stun_duration,Stun Duration
+stat.stun_recovery,Stun Recovery Rate
+stat.stun_threshold,Stun Threshold
+stat.void_damage,Void Damage
+stat.void_damage_reduction,Void Damage Reduction
+stat.void_damage_taken,Void Damage Taken
+stat.void_resistance,Void Resistance
+stat.void_rift_buildup,Void Rift Buildup
+stat.void_rift_duration,Void Rift Duration
+stat.void_rift_magnitude,Void Rift Magnitude
+tag.affliction,Affliction
+tag.all_buildup,All Buildup
+tag.all_damage,All Damage
+tag.all_damage_reduction,All Damage Reduction
+tag.all_damage_taken,All Damage Taken
+tag.all_duration,All Duration
+tag.all_magnitude,All Magnitude
+tag.all_resistance,All Resistance
+tag.ammo,Ammo
+tag.armour,Armour
+tag.attack,Attack
+tag.attribute,Attribute
+tag.barrier,Barrier
+tag.crit,Critical
+tag.crowd_control,Crowd Control
+tag.cryo,Cryo
+tag.damage_over_time,Damage Over Time
+tag.defense,Defense
+tag.elemental,Elemental
+tag.elemental_affliction,Elemental Affliction
+tag.elemental_damage,Elemental Damage
+tag.elemental_damage_reduction,Elemental Damage Reduction
+tag.elemental_damage_taken,Elemental Damage Taken
+tag.elemental_resistance,Elemental Resistance
+tag.energy,Energy
+tag.evasion,Evasion
+tag.fire,Fire
+tag.fuel,Fuel
+tag.global_defense,Global Defense
+tag.leech,Leech
+tag.life,Life
+tag.movement,Movement
+tag.offense,Offense
+tag.physical,Phsyical
+tag.projectile,Projectile
+tag.rage,Rage
+tag.speed,Speed
+tag.utility,Utility
+tag.vital,Vital
+tag.void,Void

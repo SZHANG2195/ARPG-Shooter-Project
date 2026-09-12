@@ -3,7 +3,7 @@
 
 using lethal.core.persistence.stat_identity;
 
-namespace lethal.core.persistence;
+namespace lethal.core.persistence; 
 
 public static class Stats
 {

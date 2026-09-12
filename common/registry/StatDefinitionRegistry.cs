@@ -25,7 +25,7 @@ public static class StatDefinitionRegistry
             _definitions[id] = new StatDefinition
             {
                 Id = id,
-                DisplayName = entity.DisplayName ?? string.Empty,
+                LocalizationKey = entity.LocalizationKey ?? string.Empty,
                 IsRangePaired = entity.IsRangePaired,
                 PairedCounterpart = entity.PairedCounterpartId is { } pairedId ? new StatId(pairedId) : null,
                 Tags = tags

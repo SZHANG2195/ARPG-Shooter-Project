@@ -23,8 +23,10 @@ public class GameDbContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.Entity<TagEntity>().HasKey(t => t.Name);
-        modelBuilder.Entity<StatTagEntity>().HasKey(t => new { t.StatId, t.Tag });
+        modelBuilder.Entity<TagEntity>()
+            .HasKey(t => t.Name);
+        modelBuilder.Entity<StatTagEntity>()
+            .HasKey(t => new { t.StatId, t.Tag });
         modelBuilder.Entity<StatDefinitionEntity>()
             .HasMany(s => s.Tags)
             .WithOne()
@@ -40,16 +42,24 @@ public class GameDbContext : DbContext
         modelBuilder.Entity<CharacterBaseStatEntity>()
             .HasKey(b => new { b.CharacterId, b.StatId });
         modelBuilder.Entity<CharacterBaseStatEntity>()
-            .HasOne<StatDefinitionEntity>().WithMany().HasForeignKey(b => b.StatId);
+            .HasOne<StatDefinitionEntity>()
+            .WithMany()
+            .HasForeignKey(b => b.StatId);
 
         modelBuilder.Entity<CharacterStartingResourceEntity>()
             .HasKey(r => new { r.CharacterId, r.StatId });
         modelBuilder.Entity<CharacterStartingResourceEntity>()
-            .HasOne<StatDefinitionEntity>().WithMany().HasForeignKey(r => r.StatId);
+            .HasOne<StatDefinitionEntity>()
+            .WithMany()
+            .HasForeignKey(r => r.StatId);
 
         modelBuilder.Entity<CharacterDefinitionEntity>()
-            .HasMany(c => c.BaseStats).WithOne().HasForeignKey(b => b.CharacterId);
+            .HasMany(c => c.BaseStats)
+            .WithOne()
+            .HasForeignKey(b => b.CharacterId);
         modelBuilder.Entity<CharacterDefinitionEntity>()
-            .HasMany(c => c.StartingResources).WithOne().HasForeignKey(r => r.CharacterId);
+            .HasMany(c => c.StartingResources)
+            .WithOne()
+            .HasForeignKey(r => r.CharacterId);
     }
 }

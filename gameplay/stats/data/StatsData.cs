@@ -4,5 +4,5 @@ namespace lethal.gameplay.stats.data;
 public partial class StatsData : Resource
 {
     [Export]
-    public string CharacterId { get; set; }
+    public required string CharacterId { get; set; }
 }
