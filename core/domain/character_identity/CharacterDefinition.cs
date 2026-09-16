@@ -1,6 +1,7 @@
-using lethal.core.persistence.stat_identity;
 using System.Collections.Generic;
+using lethal.core.domain.stat_identity;
 
+namespace lethal.core.domain.character_identity;
 public class CharacterDefinition
 {
     public required string Id { get; init; }

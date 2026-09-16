@@ -1,5 +1,5 @@
 using System.Collections.Generic;
-using lethal.core.persistence.stat_identity;
+using lethal.core.domain.stat_identity;
 using lethal.gameplay.stats.data;
 
 namespace lethal.gameplay.stats.modifiers;

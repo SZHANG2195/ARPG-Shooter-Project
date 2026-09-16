@@ -20,7 +20,7 @@ public readonly struct ModifierSource : IEquatable<ModifierSource>
 		InstanceId == other.InstanceId && 
 		OriginSlot == other.OriginSlot;
 
-	public override bool Equals(object obj) => obj is ModifierSource other && Equals(other);
+	public override bool Equals(object? obj) => obj is ModifierSource other && Equals(other);
 
 	public override int GetHashCode() => HashCode.Combine(Category, InstanceId, OriginSlot);
 

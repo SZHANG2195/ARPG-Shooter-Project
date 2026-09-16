@@ -42,8 +42,9 @@ public class DatabaseSeedService
                 var tagEntity = new TagEntity
                 {
                     Name = parts[0].Trim(),
-                    IsPlayerVisible = bool.TryParse(parts[1].Trim(), out bool vis) && vis,
-                    LocalizationKey = parts[2].Trim()
+                    CodeName = parts[1].Trim(),
+                    LocalizationKey = parts[2].Trim(),
+                    IsPlayerVisible = bool.TryParse(parts[3].Trim(), out bool vis) && vis,
                 };
 
                 var existing = await _dbContext.Set<TagEntity>().FindAsync(tagEntity.Name);

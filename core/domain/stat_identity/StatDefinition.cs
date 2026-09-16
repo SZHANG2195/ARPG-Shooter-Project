@@ -1,7 +1,7 @@
 using Godot;
 using System.Collections.Generic;
 
-namespace lethal.core.persistence.stat_identity;
+namespace lethal.core.domain.stat_identity;
 public class StatDefinition
 {
     public StatId Id { get; init; }

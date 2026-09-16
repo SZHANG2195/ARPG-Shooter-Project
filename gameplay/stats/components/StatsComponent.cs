@@ -1,7 +1,8 @@
 using Godot;
 using lethal.common.registry;
+using lethal.core.domain.stat_identity;
 using lethal.core.persistence;
-using lethal.core.persistence.stat_identity;
+using lethal.core.persistence.generated;
 using lethal.gameplay.stats.data;
 using lethal.gameplay.stats.enums;
 using lethal.gameplay.stats.logic;
@@ -19,6 +20,15 @@ public partial class StatsComponent : Node
 	private Dictionary<StatId, ResourcePool> _resourcePools = new();
 	private readonly ModifierManager _modifierManager = new();
 	private readonly Dictionary<StatId, float> _cachedFinalStats = new();
+
+	private record GearFlatValuesResult(
+    	Dictionary<(EquipmentSlot Slot, StatId Stat), float> AggregatedValues,
+		Dictionary<(EquipmentSlot Slot, StatId Stat, AffixType Affix), float> AffixValues);
+	
+	private record EffectivenessValueResolution(
+		Dictionary<StatModifier, float> ScaledValues,
+		Dictionary<(EquipmentSlot Slot, StatId Stat, AffixType Affix), (float IncreasedMultiplier, float MoreMultiplier)> GearDirectScaledValues,
+		Dictionary<(EquipmentSlot Slot, StatId Stat), (float IncreasedMultiplier, float MoreMultiplier)> SlotStatExtraValues);
 
 	private bool _isDirty = true;
 
@@ -53,10 +63,7 @@ public partial class StatsComponent : Node
 	public void InitializeResourcePools()
 	{
     	var characterDef = CharacterDefinitionRegistry.Get(CharacterData.CharacterId);
-    	if (characterDef == null)
-    	{
-        	return;
-    	}
+    	if (characterDef == null) return;
 
     	foreach (var stat in characterDef.StartingResources)
     	{
@@ -119,6 +126,8 @@ public partial class StatsComponent : Node
 		var baseOverrides = new Dictionary<StatId, float>();
 		var finalOverrides = new Dictionary<StatId, float>();
 
+		var effectivenessValues = _ResolveEffectivenessModifiers(allModifiers);
+
 		foreach (var pair in _baseStats)
 		{
 			workingFlatValues[pair.Key] = pair.Value;
@@ -126,114 +135,136 @@ public partial class StatsComponent : Node
 			workingMoreValues[pair.Key] = 1.0f;
 		}
 
-		var resolvedGearFlatValues = _CalculateGearFlatValues(allModifiers);
+		var gearFlatValues = _CalculateGearFlatValues(allModifiers);
 
-		var aggregatedGearFlats = new Dictionary<StatId, float>();
-
-		foreach (var gearEntry in resolvedGearFlatValues)
+		foreach (var gearEntry in gearFlatValues.AggregatedValues)
 		{
 			StatId statId = gearEntry.Key.Stat;
-			float gearValue = gearEntry.Value;
-
-			if (!aggregatedGearFlats.ContainsKey(statId))
-			{
-				aggregatedGearFlats[statId] = 0f;
-			}
-			aggregatedGearFlats[statId] += gearValue;
-
-			if (!workingFlatValues.ContainsKey(statId))
-			{
-				workingFlatValues[statId] = 0f;
-			}
-
-			workingFlatValues[statId] += gearValue;
+        	if (!workingFlatValues.ContainsKey(statId)) workingFlatValues[statId] = 0f;
+        	workingFlatValues[statId] += gearEntry.Value;
 		}
+
+		_ApplyGearDirectScaling(gearFlatValues.AffixValues, effectivenessValues.GearDirectScaledValues, workingFlatValues);
 
 		var attributeModifiers = _ExecuteAttributeCalculations(allModifiers, workingFlatValues);
 		allModifiers.AddRange(attributeModifiers);
 
-		var conversionModifiers = _ExecuteStatConversions(allModifiers, workingFlatValues);
+		var conversionModifiers = _ExecuteStatConversions(allModifiers, workingFlatValues, effectivenessValues.ScaledValues);
 		allModifiers.AddRange(conversionModifiers);
 
-		_ExecutePreMultiplierDerived(allModifiers, workingFlatValues);
+		_ExecutePreMultiplierDerived(allModifiers, workingFlatValues, effectivenessValues.ScaledValues);
 
-		var (slotPools, statSpecificPools) = _GetScalars(allModifiers);
-		var (slotAffixes, globalModifiers) = _GroupModifiers(allModifiers);
+		var globalModifiers = _GroupModifiers(allModifiers);
 
-		_PopulateWorkingMultipliers(workingIncreasedValues, workingMoreValues, baseOverrides, finalOverrides, globalModifiers);
+		_PopulateWorkingMultipliers(workingIncreasedValues, workingMoreValues, baseOverrides, finalOverrides, globalModifiers, effectivenessValues.ScaledValues);
 
-		_CalculatePrimaryStats(workingFlatValues, workingIncreasedValues, workingMoreValues, baseOverrides, finalOverrides);
+		_CalculatePrimaryStats(workingFlatValues, workingIncreasedValues, workingMoreValues, baseOverrides, finalOverrides, effectivenessValues.SlotStatExtraValues, gearFlatValues.AggregatedValues);
 
-		_ExecutePostMultiplierDerivedAndFinalize(allModifiers, workingFlatValues, workingIncreasedValues, workingMoreValues, resolvedGearFlatValues);
+    	_ExecutePostMultiplierDerivedAndFinalize(allModifiers, workingFlatValues, workingIncreasedValues, workingMoreValues, gearFlatValues.AggregatedValues, effectivenessValues.SlotStatExtraValues, effectivenessValues.ScaledValues);
 	}
 
-	private Dictionary<(EquipmentSlot Slot, StatId Stat), float> _CalculateGearFlatValues(
-		IEnumerable<StatModifier> allActiveModifiers)
+	private GearFlatValuesResult _CalculateGearFlatValues(IEnumerable<StatModifier> allActiveModifiers)
 	{
-		var resolvedLocalGearValues = new Dictionary<(EquipmentSlot Slot, StatId Stat), float>();
+		var aggregatedValues = new Dictionary<(EquipmentSlot Slot, StatId Stat), float>();
+		var byAffixValues = new Dictionary<(EquipmentSlot Slot, StatId Stat, AffixType Affix), float>();
 
-		var localItemModifiers = allActiveModifiers
-			.Where(m =>
-				m.Source.Category == ModifierSourceCategory.Equipment ||
-				m.Source.Category == ModifierSourceCategory.Augment)
-			.SelectMany(m =>
-				m.AffectedStats, (modifier, statId) => new
-				{
-					Modifier = modifier,
-					Stat = statId
-				})
-			.GroupBy(m =>
-				new
-				{
-					Slot = m.Modifier.Source.OriginSlot,
-					m.Stat
-				});
-
-		foreach (var itemModifier in localItemModifiers)
+		var groupedEquipmentModifiers = new Dictionary<(EquipmentSlot Slot, StatId Stat), List<StatModifier>>();
+		
+		foreach (var modifier in allActiveModifiers)
 		{
-			EquipmentSlot slot = itemModifier.Key.Slot;
-			StatId statId = itemModifier.Key.Stat;
+			bool isGearSourced = modifier.Source.Category == ModifierSourceCategory.Equipment || modifier.Source.Category == ModifierSourceCategory.Augment;
 
-			float itemBaseValue = 0.0f;
-			float localFlatValue = 0.0f;
+			if (!isGearSourced || modifier is DerivedStatModifier || modifier is StatConversionModifier) continue;
+
+			foreach (var statId in modifier.AffectedStats)
+			{
+				var key = (modifier.Source.OriginSlot, statId);
+
+				if (!groupedEquipmentModifiers.TryGetValue(key, out var list))
+				{
+					list = new List<StatModifier>();
+					groupedEquipmentModifiers[key] = list;
+				}
+
+				list.Add(modifier);
+			}
+		}
+
+		foreach (var group in groupedEquipmentModifiers)
+		{
+			EquipmentSlot slot = group.Key.Slot;
+			StatId statId = group.Key.Stat;
+
 			float localIncreasedMultiplier = 0.0f;
 			float localMoreMultiplier = 1.0f;
 
-			foreach (var item in itemModifier)
-			{
-				var affix = item.Modifier;
+			var flatValueByAffix = new Dictionary<AffixType, float>();
 
-				switch (affix.Type)
-				{
-					case ModifierType.Flat:
-						localFlatValue += affix.GetValue();
-						break;
-					case ModifierType.Increased:
-						localIncreasedMultiplier += affix.GetValue();
-						break;
-					case ModifierType.More:
-						localMoreMultiplier *= 1.0f + affix.GetValue();
-						break;
-					default:
-						string errorMsg = $"[StatsComponent] Error: Unhandled ModifierType '{affix.Type}' in local gear calculation!";
-						#if DEBUG
-						throw new InvalidOperationException(errorMsg);
-						#else
-						GD.PrintErr(errorMsg);
-						break;
-						#endif
-				}
-			}
+			foreach (var affix in group.Value)
+        	{
+            	float rawValue = affix.GetScalar();
 
-			float localSubtotal = (itemBaseValue + localFlatValue) * (1.0f + localIncreasedMultiplier) * localMoreMultiplier;
+            	switch (affix.Type)
+            	{
+                	case ModifierType.Flat:
+                    	flatValueByAffix.TryGetValue(affix.AffixType, out var existingFlat);
+                    	flatValueByAffix[affix.AffixType] = existingFlat + rawValue;
+                    	break;
+                	case ModifierType.Increased:
+                    	localIncreasedMultiplier += rawValue;
+                    	break;
+                	case ModifierType.More:
+                    	localMoreMultiplier *= 1.0f + rawValue;
+                    	break;
+                	default:
+                    	string errorMsg = $"[StatsComponent] Error: Unhandled ModifierType '{affix.Type}' in local gear calculation!";
+                    	#if DEBUG
+                    	throw new InvalidOperationException(errorMsg);
+                    	#else
+                    	GD.PrintErr(errorMsg);
+                    	break;
+                    	#endif
+            	}
+        	}
 
-			resolvedLocalGearValues[(slot, statId)] = localSubtotal;
-		}
+        	float itemFactor = (1.0f + localIncreasedMultiplier) * localMoreMultiplier;
+        	float slotStatTotal = 0.0f;
 
-		return resolvedLocalGearValues;
+        	foreach (var (affixType, rawFlat) in flatValueByAffix)
+        	{
+            	float scaledFlat = rawFlat * itemFactor;
+            	byAffixValues[(slot, statId, affixType)] = scaledFlat;
+            	slotStatTotal += scaledFlat;
+        	}
+
+        	aggregatedValues[(slot, statId)] = slotStatTotal;
+    	}
+
+    	return new GearFlatValuesResult(aggregatedValues, byAffixValues);
 	}
 
-	private IEnumerable<StatModifier> _ExecuteAttributeCalculations(IEnumerable<StatModifier> allModifiers, Dictionary<StatId, float> workingFlatValues)
+	private void _ApplyGearDirectScaling(
+    	Dictionary<(EquipmentSlot Slot, StatId Stat, AffixType Affix), float> byAffixValues,
+    	Dictionary<(EquipmentSlot Slot, StatId Stat, AffixType Affix), (float IncreasedMultiplier, float MoreMultiplier)> gearDirectScaledValues,
+    	Dictionary<StatId, float> workingFlatValues)
+	{
+		foreach (var byAffixEntry in byAffixValues)
+		{
+			var (slot, statId, affixType) = byAffixEntry.Key;
+			float rawSubtotalValue = byAffixEntry.Value;
+
+			if (!gearDirectScaledValues.TryGetValue((slot, statId, affixType), out var bonus)) continue;
+
+			float scaledSubtotalValue = rawSubtotalValue * (1.0f + bonus.IncreasedMultiplier) * bonus.MoreMultiplier;
+			float delta = scaledSubtotalValue - rawSubtotalValue;
+
+			if (!workingFlatValues.ContainsKey(statId)) workingFlatValues[statId] = 0f;
+			workingFlatValues[statId] += delta;
+		}
+	}
+	private IEnumerable<StatModifier> _ExecuteAttributeCalculations(
+		IEnumerable<StatModifier> allModifiers, 
+		Dictionary<StatId, float> workingFlatValues)
 	{
     	float currentStrength = workingFlatValues.GetValueOrDefault(Stats.Strength, 0.0f);
     	float currentAgility = workingFlatValues.GetValueOrDefault(Stats.Agility, 0.0f);
@@ -248,12 +279,9 @@ public partial class StatsComponent : Node
         	{
             	foreach (var targetStat in attributeModifier.AffectedStats)
             	{
-                	if (!workingFlatValues.ContainsKey(targetStat))
-                	{
-                    	workingFlatValues[targetStat] = 0.0f;
-                	}
+                	if (!workingFlatValues.ContainsKey(targetStat)) workingFlatValues[targetStat] = 0.0f;
 
-                	workingFlatValues[targetStat] += attributeModifier.GetValue();
+                	workingFlatValues[targetStat] += attributeModifier.GetScalar();
             	}
         	}
     	}
@@ -261,31 +289,33 @@ public partial class StatsComponent : Node
     	return attributeDerivedModifiers;
 	}
 
-	private IEnumerable<StatModifier> _ExecuteStatConversions(IEnumerable<StatModifier> allModifiers, Dictionary<StatId, float> workingFlatValues)
+	private IEnumerable<StatModifier> _ExecuteStatConversions(
+		IEnumerable<StatModifier> allModifiers, 
+		Dictionary<StatId, float> workingFlatValues,
+		Dictionary<StatModifier, float> scaledValues)
 	{
 		var generatedModifiers = new List<StatModifier>();
 		var siphonedAmounts = new Dictionary<StatId, float>();
 
 		foreach (var modifier in allModifiers)
 		{
-			if (modifier is StatConversionModifier conversion && conversion.TargetSplitValues != null && conversion.TargetSplitValues.Count > 0)
+			if (modifier is StatConversionModifier conversionModifier && conversionModifier.TargetSplitValues != null && conversionModifier.TargetSplitValues.Count > 0)
 			{
-				StatId sourceStat = conversion.SourceStat;
+				StatId sourceStat = conversionModifier.SourceStat;
 
-				if (!workingFlatValues.TryGetValue(sourceStat, out float sourceValue) || sourceValue <= 0.0f)
-				{
-					continue;
-				}
+				if (!workingFlatValues.TryGetValue(sourceStat, out float sourceValue) || sourceValue <= 0.0f) continue;
+
+				float effectiveRatio = scaledValues.TryGetValue(conversionModifier, out var scaled) ? scaled : conversionModifier.GetScalar();
 
 				float alreadySiphonedAmount = siphonedAmounts.GetValueOrDefault(sourceStat, 0.0f);
-				float availableSource = sourceValue - alreadySiphonedAmount;
+				float availableSourceValue = sourceValue - alreadySiphonedAmount;
 
-				if (availableSource <= 0.0f) continue;
+				if (availableSourceValue <= 0.0f) continue;
 
-				float totalConvertedAmount = availableSource * conversion.Ratio;
+				float totalConvertedAmount = availableSourceValue * effectiveRatio;
 				siphonedAmounts[sourceStat] = alreadySiphonedAmount + totalConvertedAmount;
 
-				foreach (var split in conversion.TargetSplitValues)
+				foreach (var split in conversionModifier.TargetSplitValues)
 				{
 					StatId targetStat = split.Key;
 					float splitWeight = split.Value;
@@ -300,10 +330,7 @@ public partial class StatsComponent : Node
 							new ModifierSource(ModifierSourceCategory.Conversion, $"Converted from {sourceStat}")
 						);
 
-						if (conversionMod != null)
-						{
-							generatedModifiers.Add(conversionMod);
-						}
+						if (conversionMod != null) generatedModifiers.Add(conversionMod);
 					}
 				}
 			}
@@ -321,7 +348,10 @@ public partial class StatsComponent : Node
 		return generatedModifiers;
 	}
 
-	private void _ExecutePreMultiplierDerived(IEnumerable<StatModifier> allModifiers, Dictionary<StatId, float> workingFlatValues)
+	private void _ExecutePreMultiplierDerived(
+		IEnumerable<StatModifier> allModifiers, 
+		Dictionary<StatId, float> workingFlatValues,
+		Dictionary<StatModifier, float> scaledValues)
 	{
 		foreach (var modifier in allModifiers)
 		{
@@ -329,14 +359,12 @@ public partial class StatsComponent : Node
 			{
 				if (workingFlatValues.TryGetValue(derivedModifier.SourceStat, out float sourceValue))
 				{
-					float derivedValue = sourceValue * derivedModifier.Ratio;
+					float effectiveRatio = scaledValues.TryGetValue(derivedModifier, out var scaled) ? scaled : derivedModifier.GetScalar();
+					float derivedValue = sourceValue * effectiveRatio;
 
 					foreach (var targetStat in derivedModifier.AffectedStats)
 					{
-						if (!workingFlatValues.ContainsKey(targetStat))
-						{
-							workingFlatValues[targetStat] = 0.0f;
-						}
+						if (!workingFlatValues.ContainsKey(targetStat)) workingFlatValues[targetStat] = 0.0f;
 
 						workingFlatValues[targetStat] += derivedValue;
 					}
@@ -345,73 +373,101 @@ public partial class StatsComponent : Node
 		}
 	}
 
-	private (Dictionary<EquipmentSlot, ScalingPool> SlotPools, Dictionary<(EquipmentSlot Slot, StatId Stat), ScalingPool> StatSlotPools) _GetScalars(IEnumerable<StatModifier> rawModifiers)
+	private EffectivenessValueResolution _ResolveEffectivenessModifiers(IEnumerable<StatModifier> allModifiers)
 	{
-		var slotPools = new Dictionary<EquipmentSlot, ScalingPool>();
-		var statSpecificPools = new Dictionary<(EquipmentSlot, StatId), ScalingPool>();
+		var effectivenessModifiers = allModifiers.OfType<EffectivenessModifier>().ToList();
+		var scaledValues = new Dictionary<StatModifier, float>();
+		var gearDirectScaledValues = new Dictionary<(EquipmentSlot, StatId, AffixType), (float IncreasedMultiplier, float MoreMultiplier)>();
+		var slotStatExtraValues = new Dictionary<(EquipmentSlot, StatId), (float IncreasedMultiplier, float MoreMultiplier)>();
 
-		foreach (var modifier in rawModifiers)
+		if (effectivenessModifiers.Count == 0)
+    	{
+        	return new EffectivenessValueResolution(scaledValues, gearDirectScaledValues, slotStatExtraValues);
+    	}
+
+		foreach (var modifier in allModifiers)
 		{
-			bool isScalable = modifier.Type == ModifierType.Increased || modifier.Type == ModifierType.More;
+			if (modifier is EffectivenessModifier || modifier is AttributeOverrideStatModifier) continue;
 
-			if (!isScalable || modifier.Slot == EquipmentSlot.None)
+			bool isGearFlatValueEligible = (modifier.Source.Category == ModifierSourceCategory.Equipment || modifier.Source.Category == ModifierSourceCategory.Augment)
+				&& modifier is not DerivedStatModifier
+				&& modifier is not StatConversionModifier;
+
+			float directIncreased = 0.0f, directMore = 1.0f;
+			bool hasDirectMatch = false;
+			float pooledIncreased = 0.0f, pooledMore = 1.0f;
+			bool hasPooledMatch = false;
+
+			foreach (var effectiveness in effectivenessModifiers)
 			{
-				continue;
+				if (!effectiveness.Matches(modifier)) continue;
+
+				if (effectiveness.EffectivenessApplication == EffectivenessApplication.DirectScale)
+				{
+					hasDirectMatch = true;
+					if (effectiveness.Type == ModifierType.Increased) directIncreased += effectiveness.Value;
+					else if (effectiveness.Type == ModifierType.More) directMore *= 1.0f + effectiveness.Value;
+				}
+				else
+				{
+					hasPooledMatch = true;
+					if (effectiveness.Type == ModifierType.Increased) pooledIncreased += effectiveness.Value;
+					else if (effectiveness.Type == ModifierType.More) pooledMore *= 1.0f + effectiveness.Value;
+				}
 			}
 
-			switch (modifier.Scope)
+			if (hasDirectMatch)
 			{
-				case ModifierScope.SlotEffect when modifier.Slot != EquipmentSlot.None && modifier.AffectedStats.Count == 0:
-					_GetOrCreateSlotPool(slotPools, modifier.Slot).AddModifier(modifier);
-					break;
-				case ModifierScope.Stat when modifier.Slot != EquipmentSlot.None && modifier.AffectedStats.Count != 0:
+				if (isGearFlatValueEligible)
+				{
 					foreach (var stat in modifier.AffectedStats)
 					{
-						_GetOrCreateStatSpecificSlotPool(statSpecificPools, modifier.Slot, stat).AddModifier(modifier);
+						var key = (modifier.Slot, stat, modifier.AffixType);
+
+						if (!gearDirectScaledValues.ContainsKey(key)) gearDirectScaledValues[key] = (0.0f, 1.0f);
+
+						var existing = gearDirectScaledValues[key];
+						gearDirectScaledValues[key] = (existing.IncreasedMultiplier + directIncreased, existing.MoreMultiplier * directMore);
 					}
-					break;
-				default:
-					break;
-			}
-		}
-
-		return (slotPools, statSpecificPools);
-	}
-
-	private (Dictionary<(EquipmentSlot, StatId), List<StatModifier>> ItemAffixes, Dictionary<StatId, List<StatModifier>> GlobalModifiers) _GroupModifiers(IEnumerable<StatModifier> modifiers)
-	{
-		var itemAffixesBySlotStat = new Dictionary<(EquipmentSlot Slot, StatId Stat), List<StatModifier>>();
-		var globalModifierByStat = new Dictionary<StatId, List<StatModifier>>();
-
-		foreach (var modifier in modifiers)
-		{
-			if (modifier.AffectedStats.Count == 0)
-			{
-				continue;
+				}
+				else
+				{
+					scaledValues[modifier] = modifier.GetScalar() * (1.0f + directIncreased) * directMore;
+				}
 			}
 
-			if (modifier.Slot != EquipmentSlot.None && modifier.Scope == ModifierScope.Stat)
+			if (hasPooledMatch && modifier.Slot != EquipmentSlot.None)
 			{
 				foreach (var stat in modifier.AffectedStats)
 				{
 					var key = (modifier.Slot, stat);
-					if (!itemAffixesBySlotStat.ContainsKey(key))
-					{
-						itemAffixesBySlotStat[key] = new List<StatModifier>();
-					}
-					itemAffixesBySlotStat[key].Add(modifier);
-				}
-			}
-			else if (modifier.Slot == EquipmentSlot.None)
-			{
-				foreach (var stat in modifier.AffectedStats)
-				{
-					_AddModifierToStatList(globalModifierByStat, stat, modifier);
+					
+					if (!slotStatExtraValues.ContainsKey(key)) slotStatExtraValues[key] = (0.0f, 1.0f);
+
+					var existing = slotStatExtraValues[key];
+					slotStatExtraValues[key] = (existing.IncreasedMultiplier + pooledIncreased, existing.MoreMultiplier * pooledMore);
 				}
 			}
 		}
 
-		return (itemAffixesBySlotStat, globalModifierByStat);
+		return new EffectivenessValueResolution(scaledValues, gearDirectScaledValues, slotStatExtraValues);
+	}
+
+	private Dictionary<StatId, List<StatModifier>> _GroupModifiers(IEnumerable<StatModifier> modifiers)
+	{
+		var globalModifierByStat = new Dictionary<StatId, List<StatModifier>>();
+
+		foreach (var modifier in modifiers)
+		{
+			if (modifier.AffectedStats.Count == 0 || modifier.Slot != EquipmentSlot.None) continue;
+
+			foreach (var stat in modifier.AffectedStats)
+			{
+				_AddModifierToStatList(globalModifierByStat, stat, modifier);
+			}
+		}
+
+		return globalModifierByStat;
 	}
 
 	public void _PopulateWorkingMultipliers(
@@ -419,7 +475,8 @@ public partial class StatsComponent : Node
 		Dictionary<StatId, float> workingMoreValues,
 		Dictionary<StatId, float> baseOverrides,
 		Dictionary<StatId, float> finalOverrides,
-		Dictionary<StatId, List<StatModifier>> globalModifiers)
+		Dictionary<StatId, List<StatModifier>> globalModifiers,
+		Dictionary<StatModifier, float> scaledValues)
 	{
 		foreach (var pair in globalModifiers)
 		{
@@ -428,15 +485,17 @@ public partial class StatsComponent : Node
 
 			foreach (var modifier in modifiers)
 			{
+				float value = scaledValues.TryGetValue(modifier, out var scaled) ? scaled : modifier.GetScalar();
+
 				switch (modifier.Type)
 				{
 					case ModifierType.Increased:
 						if (!workingIncreasedValues.ContainsKey(statId)) workingIncreasedValues[statId] = 0.0f;
-						workingIncreasedValues[statId] += modifier.GetValue();
+						workingIncreasedValues[statId] += value;
 						break;
 					case ModifierType.More:
 						if (!workingMoreValues.ContainsKey(statId)) workingMoreValues[statId] = 1.0f;
-						workingMoreValues[statId] += modifier.GetValue();
+						workingMoreValues[statId] += value;
 						break;
 					case ModifierType.BaseOverride:
 						if (baseOverrides.ContainsKey(statId))
@@ -448,7 +507,7 @@ public partial class StatsComponent : Node
 							GD.PrintErr(warning);
 							#endif
 						}
-						baseOverrides[statId] = modifier.GetValue();
+						baseOverrides[statId] = value;
 						break;
 					case ModifierType.FinalOverride:
 						if (finalOverrides.ContainsKey(statId))
@@ -460,7 +519,7 @@ public partial class StatsComponent : Node
 							GD.PrintErr(warning);
 							#endif
 						}
-						finalOverrides[statId] = modifier.GetValue();
+						finalOverrides[statId] = value;
 						break;
 				}
 			}
@@ -472,21 +531,54 @@ public partial class StatsComponent : Node
 		Dictionary<StatId, float> workingIncreasedValues,
 		Dictionary<StatId, float> workingMoreValues,
 		Dictionary<StatId, float> baseOverrides,
-		Dictionary<StatId, float> finalOverrides)
+		Dictionary<StatId, float> finalOverrides,
+		Dictionary<(EquipmentSlot Slot, StatId Stat), (float IncreasedMultiplier, float MoreMultiplier)> slotStatExtraValues,
+		Dictionary<(EquipmentSlot Slot, StatId Stat), float> resolvedGearFlatValues)
 	{
+		var gearFlatValuesByStat = new Dictionary<StatId, List<(EquipmentSlot Slot, float Value)>>();
+
+		foreach (var gearEntry in resolvedGearFlatValues)
+		{
+			var stat = gearEntry.Key.Stat;
+
+			if (!gearFlatValuesByStat.TryGetValue(stat, out var list))
+			{
+				list = new List<(EquipmentSlot, float)>();
+				gearFlatValuesByStat[stat] = list;
+			}
+
+			list.Add((gearEntry.Key.Slot, gearEntry.Value));
+		}
+
 		foreach (var pair in _baseStats)
 		{
 			var statId = pair.Key;
 			float defaultBaseValue = pair.Value;
 
-			float effectiveBase = baseOverrides.GetValueOrDefault(statId, defaultBaseValue);
-			float flatValue = workingFlatValues.GetValueOrDefault(statId, defaultBaseValue) - defaultBaseValue;
-			float increasedMultiplier = workingIncreasedValues.GetValueOrDefault(statId, 0.0f);
-			float moreMultiplier = workingMoreValues.GetValueOrDefault(statId, 1.0f);
+			float effectiveBaseValues = baseOverrides.GetValueOrDefault(statId, defaultBaseValue);
+			float globalIncreasedMultipliers = workingIncreasedValues.GetValueOrDefault(statId, 0.0f);
+			float globalMoreMultipliers = workingMoreValues.GetValueOrDefault(statId, 1.0f);
 
-			float standardCalculation = (effectiveBase + flatValue) * (1.0f + increasedMultiplier) * moreMultiplier;
+			float genericFlatValues = workingFlatValues.GetValueOrDefault(statId, defaultBaseValue) - defaultBaseValue;
+			float slotScopedTotalValues = 0.0f;
 
-			float finalValue = finalOverrides.TryGetValue(statId, out var overrideVal) ? overrideVal : standardCalculation;
+			if (gearFlatValuesByStat.TryGetValue(statId, out var contributingSlotValues))
+			{
+				foreach (var (slot, rawSlotValue) in contributingSlotValues)
+				{
+					if (slotStatExtraValues.TryGetValue((slot, statId), out var extra))
+					{
+						float slotContribution = rawSlotValue * (1.0f + globalIncreasedMultipliers + extra.IncreasedMultiplier) * (globalMoreMultipliers * extra.MoreMultiplier);
+						slotScopedTotalValues += slotContribution;
+						genericFlatValues -= rawSlotValue;
+					}
+				}
+			}
+
+			float genericContribution = (effectiveBaseValues + genericFlatValues) * (1.0f + globalIncreasedMultipliers) * globalMoreMultipliers;
+        	float standardCalculation = genericContribution + slotScopedTotalValues;
+
+        	float finalValue = finalOverrides.TryGetValue(statId, out var overrideVal) ? overrideVal : standardCalculation;
 
 			_cachedFinalStats[statId] = finalValue;
 		}
@@ -497,7 +589,9 @@ public partial class StatsComponent : Node
 		Dictionary<StatId, float> workingFlatValues,
 		Dictionary<StatId, float> workingIncreasedValues,
 		Dictionary<StatId, float> workingMoreValues,
-		Dictionary<(EquipmentSlot Slot, StatId Stat), float> resolvedGearFlatValues)
+		Dictionary<(EquipmentSlot Slot, StatId Stat), float> resolvedGearFlatValues,
+		Dictionary<(EquipmentSlot Slot, StatId Stat), (float IncreasedMultiplier, float MoreMultiplier)> slotStatExtraValues,
+		Dictionary<StatModifier, float> scaledValues)
 	{
 		foreach (var modifier in allModifiers)
 		{
@@ -514,19 +608,26 @@ public partial class StatsComponent : Node
 					sourceValue = _cachedFinalStats.GetValueOrDefault(derivedModifier.SourceStat, 0.0f);
 				}
 
-				float derivedFlatValue = sourceValue * derivedModifier.Ratio;
+				float effectiveRatio = scaledValues.TryGetValue(derivedModifier, out var scaled) ? scaled : derivedModifier.GetScalar();
+				float derivedFlatValue = sourceValue * effectiveRatio;
 
 				foreach (var targetStat in derivedModifier.AffectedStats)
 				{
-					float defaultBase = _baseStats.GetValueOrDefault(targetStat, 0.0f);
+					float defaultBaseValue = _baseStats.GetValueOrDefault(targetStat, 0.0f);
 
-					float existingFlats = workingFlatValues.GetValueOrDefault(targetStat, defaultBase) - defaultBase;
-					float totalFlat = existingFlats + derivedFlatValue;
+					float existingFlatValues = workingFlatValues.GetValueOrDefault(targetStat, defaultBaseValue) - defaultBaseValue;
+					float totalFlatValues = existingFlatValues + derivedFlatValue;
 
-					float increased = workingIncreasedValues.GetValueOrDefault(targetStat, 0.0f);
-					float more = workingMoreValues.GetValueOrDefault(targetStat, 1.0f);
+					float increasedMultiplier = workingIncreasedValues.GetValueOrDefault(targetStat, 0.0f);
+					float moreMultiplier = workingMoreValues.GetValueOrDefault(targetStat, 1.0f);
 
-					float finalDerivedStatValue = (defaultBase + totalFlat) * (1.0f + increased) * more;
+					if (derivedModifier.Slot != EquipmentSlot.None && slotStatExtraValues.TryGetValue((derivedModifier.Slot, targetStat), out var extra))
+                	{
+                    	increasedMultiplier += extra.IncreasedMultiplier;
+                    	moreMultiplier *= extra.MoreMultiplier;
+                	}
+
+					float finalDerivedStatValue = (defaultBaseValue + totalFlatValues) * (1.0f + increasedMultiplier) * moreMultiplier;
 					_cachedFinalStats[targetStat] = finalDerivedStatValue;
 				}
 			}
@@ -535,31 +636,7 @@ public partial class StatsComponent : Node
 
 	private void _AddModifierToStatList(Dictionary<StatId, List<StatModifier>> modifierByStat, StatId statId, StatModifier modifier)
 	{
-		if (!modifierByStat.ContainsKey(statId))
-		{
-			modifierByStat[statId] = new List<StatModifier>();
-		}
+		if (!modifierByStat.ContainsKey(statId)) modifierByStat[statId] = new List<StatModifier>();
 		modifierByStat[statId].Add(modifier);
-	}
-
-	private ScalingPool _GetOrCreateSlotPool(Dictionary<EquipmentSlot, ScalingPool> pools, EquipmentSlot slot)
-	{
-		if (!pools.TryGetValue(slot, out var pool))
-		{
-			pool = new ScalingPool();
-			pools[slot] = pool;
-		}
-		return pool;
-	}
-
-	private ScalingPool _GetOrCreateStatSpecificSlotPool(Dictionary<(EquipmentSlot, StatId), ScalingPool> pools, EquipmentSlot slot, StatId stat)
-	{
-		var key = (slot, stat);
-		if (!pools.TryGetValue(key, out var pool))
-		{
-			pool = new ScalingPool();
-			pools[key] = pool;
-		}
-		return pool;
 	}
 }

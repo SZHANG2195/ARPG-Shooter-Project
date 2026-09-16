@@ -1,5 +1,5 @@
 using System.Collections.Generic;
-using lethal.core.persistence.stat_identity;
+using lethal.core.domain.stat_identity;
 
 namespace lethal.gameplay.stats.modifiers;
 public class StatConversionModifier : StatModifier
@@ -26,4 +26,6 @@ public class StatConversionModifier : StatModifier
 	}
 
     public override float GetValue() => 0.0f;
+
+	public override float GetScalar() => Ratio;
 }

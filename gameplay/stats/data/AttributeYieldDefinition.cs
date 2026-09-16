@@ -1,4 +1,4 @@
-using lethal.core.persistence.stat_identity;
+using lethal.core.domain.stat_identity;
 using lethal.gameplay.stats.enums;
 
 namespace lethal.gameplay.stats.data;

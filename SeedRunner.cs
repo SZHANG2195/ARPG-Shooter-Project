@@ -5,6 +5,7 @@ using Godot;
 using lethal.core.config;
 using lethal.core.persistence;
 using lethal.core.services;
+using lethal.core.tools;
 
 public partial class SeedRunner : Node
 {
@@ -49,6 +50,8 @@ public partial class SeedRunner : Node
         {
             GD.PrintErr($"[SeedRunner] Error: Database initialization or seeding failed: {ex.Message}");
         }
+
+        DatabaseCodeGeneratorRunner.RunGenerationPipeline();
 
         GD.Print("[SeedRunner]: Loading Complete.");
     }

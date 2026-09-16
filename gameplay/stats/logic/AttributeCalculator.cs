@@ -1,6 +1,6 @@
 using System.Collections.Generic;
-using lethal.core.persistence;
-using lethal.core.persistence.stat_identity;
+using lethal.core.domain.stat_identity;
+using lethal.core.persistence.generated;
 using lethal.gameplay.stats.enums;
 using lethal.gameplay.stats.modifiers;
 
@@ -12,7 +12,7 @@ public static class AttributeCalculator
 		float strength, 
 		float agility, 
 		float intelligence,
-		IEnumerable<StatModifier> activeModifers = null)
+		IEnumerable<StatModifier>? activeModifiers = null)
 	{
 		var suppressedAttributes = new HashSet<StatId>();
 
@@ -24,9 +24,9 @@ public static class AttributeCalculator
             return 0.0f;
         }
 
-		if (activeModifers != null)
+		if (activeModifiers != null)
 		{
-			foreach (var modifier in activeModifers)
+			foreach (var modifier in activeModifiers)
 			{
 				if (modifier is AttributeOverrideStatModifier overrideModifier)
 				{
@@ -56,7 +56,7 @@ public static class AttributeCalculator
                                 finalValue,
                                 targetKvp.TargetStat,
                                 new ModifierSource(ModifierSourceCategory.Attribute, "Custom Scaling Rule")
-                            );
+                            )!;
                         }
 					}
 				}
@@ -68,21 +68,24 @@ public static class AttributeCalculator
             yield return StatModifier.CreateSingleStaticModifier(
                 ModifierType.Flat,
                 strength * 5f, Stats.Strength,
-                new(ModifierSourceCategory.Attribute, "Strength"));
+                new(ModifierSourceCategory.Attribute, "Strength")
+            )!;
         }
         if (agility > 0 && !suppressedAttributes.Contains(Stats.Agility))
         {
             yield return StatModifier.CreateSingleStaticModifier(
                 ModifierType.Increased,
                 agility * 0.5f, Stats.Agility,
-                new(ModifierSourceCategory.Attribute, "Agility"));
+                new(ModifierSourceCategory.Attribute, "Agility")
+            )!;
         }
         if (intelligence > 0 && !suppressedAttributes.Contains(Stats.Intelligence))
         {
             yield return StatModifier.CreateSingleStaticModifier(
                 ModifierType.Flat,
                 intelligence * 5f, Stats.Intelligence,
-                new(ModifierSourceCategory.Attribute, "Intelligence"));
+                new(ModifierSourceCategory.Attribute, "Intelligence")
+            )!;
         }
 	}
 }

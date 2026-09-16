@@ -1,7 +1,8 @@
 using Godot;
+using lethal.core.domain.character_identity;
+using lethal.core.domain.stat_identity;
 using lethal.core.persistence;
 using lethal.core.persistence.entities.characters;
-using lethal.core.persistence.stat_identity;
 using Microsoft.EntityFrameworkCore;
 using System.Collections.Generic;
 using System.Linq;

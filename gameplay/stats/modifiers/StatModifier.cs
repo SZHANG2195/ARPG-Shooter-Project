@@ -1,6 +1,6 @@
 using Godot;
 using lethal.common.registry;
-using lethal.core.persistence.stat_identity;
+using lethal.core.domain.stat_identity;
 using lethal.gameplay.stats.enums;
 using System;
 using System.Collections.Generic;
@@ -22,6 +22,8 @@ public abstract class StatModifier
 	public virtual void Tick(float delta) {}
 	
 	public abstract float GetValue();
+
+	public virtual float GetScalar() => GetValue();
 
 	public static StaticStatModifier? CreateSingleStaticModifier(
 		ModifierType type, 

@@ -1,6 +1,6 @@
 using System;
 
-namespace lethal.core.persistence.stat_identity;
+namespace lethal.core.domain.stat_identity;
 public readonly struct StatId : IEquatable<StatId>
 {
     public string Key { get; }
@@ -11,7 +11,7 @@ public readonly struct StatId : IEquatable<StatId>
     }
 
     public bool Equals(StatId other) => Key == other.Key;
-    public override bool Equals(object obj) => obj is StatId other && Equals(other);
+    public override bool Equals(object? obj) => obj is StatId other && Equals(other);
     public override int GetHashCode() => Key.GetHashCode();
     public override string ToString() => Key;
 
