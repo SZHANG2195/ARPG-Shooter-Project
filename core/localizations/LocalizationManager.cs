@@ -1,5 +1,4 @@
 using Godot;
-using System;
 
 namespace lethal.core.localizations;
 public class LocalizationManager

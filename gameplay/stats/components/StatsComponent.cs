@@ -1,4 +1,6 @@
 using Godot;
+using lethal.common.context;
+using lethal.common.context.enums;
 using lethal.common.registry;
 using lethal.core.domain.stat_identity;
 using lethal.core.persistence;
@@ -20,6 +22,7 @@ public partial class StatsComponent : Node
 	private Dictionary<StatId, ResourcePool> _resourcePools = new();
 	private readonly ModifierManager _modifierManager = new();
 	private readonly Dictionary<StatId, float> _cachedFinalStats = new();
+	private StatPipelineFlags _pipelineFlags = StatPipelineFlags.DefaultPlayer;
 
 	private record GearFlatValuesResult(
     	Dictionary<(EquipmentSlot Slot, StatId Stat), float> AggregatedValues,
@@ -47,14 +50,16 @@ public partial class StatsComponent : Node
 
 	public void InitializeBaseStats()
 	{
-    	var characterDef = CharacterDefinitionRegistry.Get(CharacterData.CharacterId);
-    	if (characterDef == null)
+    	var characterDefinition = CharacterDefinitionRegistry.Get(CharacterData.CharacterId);
+    	if (characterDefinition == null)
     	{
     	    GD.PrintErr($"[StatsComponent] Warning: No character definition found for '{CharacterData.CharacterId}'!");
     	    return;
     	}
 
-    	foreach (var stat in characterDef.BaseStats)
+		_pipelineFlags = characterDefinition.PipelineFlags;
+
+    	foreach (var stat in characterDefinition.BaseStats)
     	{
     		_baseStats[stat.Key] = stat.Value;
     	}
@@ -114,11 +119,36 @@ public partial class StatsComponent : Node
 		}
 	}
 
+	public ResourcePool? GetResourcePool(StatId maxStat)
+	{
+		return _resourcePools.TryGetValue(maxStat, out var pool) ? pool : null;
+	}
+
+	public float? GetResourcePoolPercentage(StatId maxStat)
+	{
+		var pool = GetResourcePool(maxStat);
+		if (pool == null) return null;
+
+		float rawMax = GetFinalStat(maxStat);
+		return rawMax > 0f ? pool.CurrentValue / rawMax : null;
+	}
+
 	private void _RecalculateFinalStats()
 	{
 		_cachedFinalStats.Clear();
 
-		var allModifiers = new List<StatModifier>(_modifierManager.GetAllActiveModifiers());
+		var activeModifiers = new List<StatModifier>(_modifierManager.GetAllActiveModifiers());
+		var allModifiers = new List<StatModifier>(activeModifiers.Count);
+
+		var persistentContext = new ConditionContext { Source = this, Scope = ConditionScope.Persistent};
+
+		foreach (var modifier in activeModifiers)
+		{
+    		if (modifier.ConditionScope != ConditionScope.Persistent) continue;
+    		if (modifier.Condition != null && !modifier.Condition.Evaluate(persistentContext)) continue;
+
+    		allModifiers.Add(modifier);
+		}
 
 		var workingFlatValues = new Dictionary<StatId, float>();
 		var workingIncreasedValues = new Dictionary<StatId, float>();
@@ -126,7 +156,9 @@ public partial class StatsComponent : Node
 		var baseOverrides = new Dictionary<StatId, float>();
 		var finalOverrides = new Dictionary<StatId, float>();
 
-		var effectivenessValues = _ResolveEffectivenessModifiers(allModifiers);
+		var effectivenessValues = _HasFlag(StatPipelineFlags.Effectiveness) ?
+			_ResolveEffectivenessModifiers(allModifiers) :
+			new EffectivenessValueResolution(new(), new(), new());
 
 		foreach (var pair in _baseStats)
 		{
@@ -135,32 +167,44 @@ public partial class StatsComponent : Node
 			workingMoreValues[pair.Key] = 1.0f;
 		}
 
-		var gearFlatValues = _CalculateGearFlatValues(allModifiers);
+		var gearFlatValues = _HasFlag(StatPipelineFlags.GearFlatValues) ?
+			_CalculateGearFlatValues(allModifiers) :
+			new GearFlatValuesResult(new(), new());
 
-		foreach (var gearEntry in gearFlatValues.AggregatedValues)
+
+		if (_HasFlag(StatPipelineFlags.GearFlatValues))
 		{
-			StatId statId = gearEntry.Key.Stat;
-        	if (!workingFlatValues.ContainsKey(statId)) workingFlatValues[statId] = 0f;
-        	workingFlatValues[statId] += gearEntry.Value;
+			foreach (var gearEntry in gearFlatValues.AggregatedValues)
+			{
+				StatId statId = gearEntry.Key.Stat;
+        		if (!workingFlatValues.ContainsKey(statId)) workingFlatValues[statId] = 0f;
+        		workingFlatValues[statId] += gearEntry.Value;
+			}
+
+			_ApplyGearDirectScaling(gearFlatValues.AffixValues, effectivenessValues.GearDirectScaledValues, workingFlatValues);
 		}
 
-		_ApplyGearDirectScaling(gearFlatValues.AffixValues, effectivenessValues.GearDirectScaledValues, workingFlatValues);
-
-		var attributeModifiers = _ExecuteAttributeCalculations(allModifiers, workingFlatValues);
+		var attributeModifiers = _HasFlag(StatPipelineFlags.Attributes) ?
+			_ExecuteAttributeCalculations(allModifiers, workingFlatValues) :
+			Enumerable.Empty<StatModifier>();
 		allModifiers.AddRange(attributeModifiers);
 
-		var conversionModifiers = _ExecuteStatConversions(allModifiers, workingFlatValues, effectivenessValues.ScaledValues);
+		var conversionModifiers = _HasFlag(StatPipelineFlags.Conversions) ?
+			_ExecuteStatConversions(allModifiers, workingFlatValues, effectivenessValues.ScaledValues) :
+			Enumerable.Empty<StatModifier>();
 		allModifiers.AddRange(conversionModifiers);
 
-		_ExecutePreMultiplierDerived(allModifiers, workingFlatValues, effectivenessValues.ScaledValues);
+		if (_HasFlag(StatPipelineFlags.DerivedStats)) _ExecutePreMultiplierDerived(allModifiers, workingFlatValues, effectivenessValues.ScaledValues);
 
-		var globalModifiers = _GroupModifiers(allModifiers);
+		var globalModifiers = _HasFlag(StatPipelineFlags.GlobalMultipliers) ?
+			_GroupModifiers(allModifiers) :
+			new Dictionary<StatId, List<StatModifier>>();
 
 		_PopulateWorkingMultipliers(workingIncreasedValues, workingMoreValues, baseOverrides, finalOverrides, globalModifiers, effectivenessValues.ScaledValues);
 
 		_CalculatePrimaryStats(workingFlatValues, workingIncreasedValues, workingMoreValues, baseOverrides, finalOverrides, effectivenessValues.SlotStatExtraValues, gearFlatValues.AggregatedValues);
 
-    	_ExecutePostMultiplierDerivedAndFinalize(allModifiers, workingFlatValues, workingIncreasedValues, workingMoreValues, gearFlatValues.AggregatedValues, effectivenessValues.SlotStatExtraValues, effectivenessValues.ScaledValues);
+    	if (_HasFlag(StatPipelineFlags.DerivedStats)) _ExecutePostMultiplierDerivedAndFinalize(allModifiers, workingFlatValues, workingIncreasedValues, workingMoreValues, gearFlatValues.AggregatedValues, effectivenessValues.SlotStatExtraValues, effectivenessValues.ScaledValues);
 	}
 
 	private GearFlatValuesResult _CalculateGearFlatValues(IEnumerable<StatModifier> allActiveModifiers)
@@ -639,4 +683,12 @@ public partial class StatsComponent : Node
 		if (!modifierByStat.ContainsKey(statId)) modifierByStat[statId] = new List<StatModifier>();
 		modifierByStat[statId].Add(modifier);
 	}
+
+	private bool _HasFlag(StatPipelineFlags flag) => (_pipelineFlags & flag) != 0;
+
+    internal float? GetResourcePercentage(StatId maxHealth)
+    {
+        throw new NotImplementedException();
+    }
+
 }

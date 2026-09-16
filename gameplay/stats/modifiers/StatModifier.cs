@@ -1,4 +1,6 @@
 using Godot;
+using lethal.common.context.conditions;
+using lethal.common.context.enums;
 using lethal.common.registry;
 using lethal.core.domain.stat_identity;
 using lethal.gameplay.stats.enums;
@@ -13,8 +15,9 @@ public abstract class StatModifier
 	public ModifierSource Source;
 	public EquipmentSlot Slot = EquipmentSlot.None;
 	public AffixType AffixType = AffixType.None;
-	public ModifierScope Scope = ModifierScope.Stat;
-	public string ConditionKey { get; set; } = string.Empty;
+	public ModifierScope ModifierScope = ModifierScope.Stat;
+	public ICondition? Condition { get; set; } = null;
+	public ConditionScope ConditionScope { get; set; } = ConditionScope.Persistent;
 	public List<StatId> AffectedStats { get; set; } = new();
 
 
@@ -33,7 +36,8 @@ public abstract class StatModifier
 		EquipmentSlot slot = EquipmentSlot.None, 
 		AffixType affixType = AffixType.None, 
 		ModifierScope scope = ModifierScope.Stat, 
-		string conditionKey = "")
+		ICondition? condition = null,
+		ConditionScope conditionScope = ConditionScope.Persistent)
 	{
 		if (stat is null)
 		{
@@ -48,8 +52,9 @@ public abstract class StatModifier
 			Source = source,
 			Slot = slot,
 			AffixType = affixType,
-			Scope = scope,
-			ConditionKey = conditionKey,
+			ModifierScope = scope,
+			Condition = condition,
+        	ConditionScope = conditionScope,
 
 			//Class specific
 			Value = value,
@@ -68,7 +73,8 @@ public abstract class StatModifier
 		EquipmentSlot slot = EquipmentSlot.None, 
 		AffixType affixType = AffixType.None, 
 		ModifierScope scope = ModifierScope.Stat, 
-		string conditionKey = "")
+		ICondition? condition = null,
+		ConditionScope conditionScope = ConditionScope.Persistent)
 	{
 		if (tag == null || tag.IsEmpty || tag == "none")
     	{
@@ -82,8 +88,9 @@ public abstract class StatModifier
 			Source = source,
 			Slot = slot,
 			AffixType = affixType,
-			Scope = scope,
-			ConditionKey = conditionKey,
+			ModifierScope = scope,
+			Condition = condition,
+        	ConditionScope = conditionScope,
 
 			Value = value,
 		};
@@ -102,7 +109,8 @@ public abstract class StatModifier
 		EquipmentSlot slot = EquipmentSlot.None, 
 		AffixType affixType = AffixType.None,
 		ModifierScope scope = ModifierScope.Stat, 
-		string conditionKey = "")
+		ICondition? condition = null,
+		ConditionScope conditionScope = ConditionScope.Persistent)
 	{
 		if (sourceStat is null || targetStat is null)
 		{
@@ -116,8 +124,9 @@ public abstract class StatModifier
 			Source = source,
 			Slot = slot,
 			AffixType = affixType,
-			Scope = scope,
-			ConditionKey = conditionKey,
+			ModifierScope = scope,
+			Condition = condition,
+        	ConditionScope = conditionScope,
 
 			SourceStat = sourceStat.Value,
 			Ratio = ratio,
@@ -138,7 +147,8 @@ public abstract class StatModifier
 		EquipmentSlot slot = EquipmentSlot.None, 
 		AffixType affixType = AffixType.None,
 		ModifierScope scope = ModifierScope.Stat, 
-		string conditionKey = "")
+		ICondition? condition = null,
+		ConditionScope conditionScope = ConditionScope.Persistent)
 	{
 		if (sourceStat is null || tag == null || tag.IsEmpty || tag == "none")
     	{
@@ -153,8 +163,9 @@ public abstract class StatModifier
 			Source = source,
 			Slot = slot,
 			AffixType = affixType,
-			Scope = scope,
-			ConditionKey = conditionKey,
+			ModifierScope = scope,
+			Condition = condition,
+        	ConditionScope = conditionScope,
 
 			SourceStat = sourceStat.Value,
 			Ratio = ratio,
@@ -174,7 +185,8 @@ public abstract class StatModifier
 		EquipmentSlot slot = EquipmentSlot.None, 
 		AffixType affixType = AffixType.None,
 		ModifierScope scope = ModifierScope.Stat, 
-		string conditionKey = "")
+		ICondition? condition = null,
+		ConditionScope conditionScope = ConditionScope.Persistent)
 	{
 		if (sourceStat is null || targetStat is null)
 		{
@@ -188,8 +200,9 @@ public abstract class StatModifier
 			Source = source,
 			Slot = slot,
 			AffixType = affixType,
-			Scope = scope,
-			ConditionKey = conditionKey,
+			ModifierScope = scope,
+			Condition = condition,
+        	ConditionScope = conditionScope,
 
 			SourceStat = sourceStat.Value,
 			Ratio = ratio,
@@ -211,7 +224,8 @@ public abstract class StatModifier
 		EquipmentSlot slot = EquipmentSlot.None, 
 		AffixType affixType = AffixType.None,
 		ModifierScope scope = ModifierScope.Stat, 
-		string conditionKey = "",
+		ICondition? condition = null,
+		ConditionScope conditionScope = ConditionScope.Persistent,
 		Dictionary<StatId, float>? manualSplitValues = null)
 	{
 		if (sourceStat is null || tag == null || tag.IsEmpty || tag == "none" )
@@ -227,15 +241,16 @@ public abstract class StatModifier
 			Source = source,
 			Slot = slot,
 			AffixType = affixType,
-			Scope = scope,
-			ConditionKey = conditionKey,
+			ModifierScope = scope,
+			Condition = condition,
+        	ConditionScope = conditionScope,
 
 			SourceStat = sourceStat.Value,
 			Ratio = ratio
 		};
 
-		var resolvedStats = StatDefinitionRegistry.GetByTag(tag);
-		if (resolvedStats.Count() == 0)
+		var resolvedStats = StatDefinitionRegistry.GetByTag(tag).ToList();
+		if (resolvedStats.Count == 0)
     	{
         	GD.PrintErr($"[Modifiers] Warning: Tagged conversion modifier found no stats for tag '{tag}'!");
         	return modifier;
@@ -276,7 +291,7 @@ public abstract class StatModifier
 		}
 		else
 		{
-			float splitWeightPerStat = 1.0f / resolvedStats.Count();
+			float splitWeightPerStat = 1.0f / resolvedStats.Count;
 			finalSplitValues = new Dictionary<StatId, float>();
 
 			foreach (var stat in resolvedStats)
