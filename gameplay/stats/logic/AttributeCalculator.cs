@@ -8,7 +8,7 @@ using lethal.gameplay.stats.modifiers;
 namespace lethal.gameplay.stats.logic;
 public static class AttributeCalculator
 {
-	public static IEnumerable<StatModifier> GetDerivedModifiers(
+	public static IEnumerable<StatModifier> GetAttributeDerivedModifiers(
 		float strength, 
 		float agility, 
 		float intelligence,

@@ -33,6 +33,12 @@ public partial class StatsComponent : Node
 		Dictionary<(EquipmentSlot Slot, StatId Stat, AffixType Affix), (float IncreasedMultiplier, float MoreMultiplier)> GearDirectScaledValues,
 		Dictionary<(EquipmentSlot Slot, StatId Stat), (float IncreasedMultiplier, float MoreMultiplier)> SlotStatExtraValues);
 
+	private static readonly Dictionary<ThresholdType, (StatId Stat, StatId DefaultSource, float DefaultRatio)> _thresholdConfig = new()
+	{
+    	[ThresholdType.Stun] = (Stats.StunThreshold, Stats.MaxHealth, 0.5f),
+    	[ThresholdType.Affliction] = (Stats.AfflictionThreshold, Stats.MaxHealth, 0.5f),
+	};
+
 	private bool _isDirty = true;
 
 	public override void _Ready()
@@ -202,9 +208,13 @@ public partial class StatsComponent : Node
 
 		_PopulateWorkingMultipliers(workingIncreasedValues, workingMoreValues, baseOverrides, finalOverrides, globalModifiers, effectivenessValues.ScaledValues);
 
-		_CalculatePrimaryStats(workingFlatValues, workingIncreasedValues, workingMoreValues, baseOverrides, finalOverrides, effectivenessValues.SlotStatExtraValues, gearFlatValues.AggregatedValues);
+		_CalculatePrimaryStats(workingFlatValues, workingIncreasedValues, workingMoreValues, baseOverrides, effectivenessValues.SlotStatExtraValues, gearFlatValues.AggregatedValues);
 
     	if (_HasFlag(StatPipelineFlags.DerivedStats)) _ExecutePostMultiplierDerivedAndFinalize(allModifiers, workingFlatValues, workingIncreasedValues, workingMoreValues, gearFlatValues.AggregatedValues, effectivenessValues.SlotStatExtraValues, effectivenessValues.ScaledValues);
+
+		_ApplyFinalOverrides(finalOverrides);
+
+		_ResolveThresholds(allModifiers, workingIncreasedValues, workingMoreValues, finalOverrides);
 	}
 
 	private GearFlatValuesResult _CalculateGearFlatValues(IEnumerable<StatModifier> allActiveModifiers)
@@ -314,7 +324,7 @@ public partial class StatsComponent : Node
     	float currentAgility = workingFlatValues.GetValueOrDefault(Stats.Agility, 0.0f);
     	float currentIntelligence = workingFlatValues.GetValueOrDefault(Stats.Intelligence, 0.0f);
 
-    	var attributeDerivedModifiers = AttributeCalculator.GetDerivedModifiers(
+    	var attributeDerivedModifiers = AttributeCalculator.GetAttributeDerivedModifiers(
     	currentStrength, currentAgility, currentIntelligence, allModifiers);
 
     	foreach (var attributeModifier in attributeDerivedModifiers)
@@ -575,7 +585,6 @@ public partial class StatsComponent : Node
 		Dictionary<StatId, float> workingIncreasedValues,
 		Dictionary<StatId, float> workingMoreValues,
 		Dictionary<StatId, float> baseOverrides,
-		Dictionary<StatId, float> finalOverrides,
 		Dictionary<(EquipmentSlot Slot, StatId Stat), (float IncreasedMultiplier, float MoreMultiplier)> slotStatExtraValues,
 		Dictionary<(EquipmentSlot Slot, StatId Stat), float> resolvedGearFlatValues)
 	{
@@ -622,7 +631,7 @@ public partial class StatsComponent : Node
 			float genericContribution = (effectiveBaseValues + genericFlatValues) * (1.0f + globalIncreasedMultipliers) * globalMoreMultipliers;
         	float standardCalculation = genericContribution + slotScopedTotalValues;
 
-        	float finalValue = finalOverrides.TryGetValue(statId, out var overrideVal) ? overrideVal : standardCalculation;
+        	float finalValue = standardCalculation;
 
 			_cachedFinalStats[statId] = finalValue;
 		}
@@ -674,6 +683,72 @@ public partial class StatsComponent : Node
 					float finalDerivedStatValue = (defaultBaseValue + totalFlatValues) * (1.0f + increasedMultiplier) * moreMultiplier;
 					_cachedFinalStats[targetStat] = finalDerivedStatValue;
 				}
+			}
+		}
+	}
+
+	private void _ApplyFinalOverrides(Dictionary<StatId, float> finalOverrides)
+	{
+		foreach (var (statId, value) in finalOverrides)
+		{
+			_cachedFinalStats[statId] = value;
+		}
+	}
+
+	private void _ResolveThresholds(
+    	IEnumerable<StatModifier> allModifiers,
+    	Dictionary<StatId, float> workingIncreasedValues,
+    	Dictionary<StatId, float> workingMoreValues,
+    	Dictionary<StatId, float> finalOverrides)
+	{
+		var overridesByTarget = new Dictionary<ThresholdType, ThresholdOverrideDerivedStatModifier>();
+
+		foreach (var modifier in allModifiers)
+		{
+			if (modifier is ThresholdOverrideDerivedStatModifier thresholdOverride)
+			{
+				if (overridesByTarget.ContainsKey(thresholdOverride.TargetThreshold))
+				{
+					string warning = $"[StatsComponent] Warning: Multiple ThresholdOverrides found for {thresholdOverride.TargetThreshold}!";
+                	#if DEBUG
+                	throw new InvalidOperationException(warning);
+                	#else
+                	GD.PrintErr(warning);
+                	#endif
+				}
+
+				overridesByTarget[thresholdOverride.TargetThreshold] = thresholdOverride;
+			}
+		}
+
+		foreach (var (thresholdType, config) in _thresholdConfig)
+		{
+			float computedBaseValue;
+
+			if (overridesByTarget.TryGetValue(thresholdType, out var overrideModifier))
+			{
+				computedBaseValue = 0.0f;
+
+				foreach (var (sourceStat, ratio) in overrideModifier.SourceStatRatios)
+				{
+					computedBaseValue += _cachedFinalStats.GetValueOrDefault(sourceStat, 0.0f) * ratio;
+				}
+			}
+			else
+			{
+				computedBaseValue = _cachedFinalStats.GetValueOrDefault(config.DefaultSource, 0.0f) * config.DefaultRatio;
+			}
+
+			float increasedMultiplier = workingIncreasedValues.GetValueOrDefault(config.Stat, 0.0f);
+			float moreMultiplier = workingMoreValues.GetValueOrDefault(config.Stat, 1.0f);
+			float scaledBaseValue = computedBaseValue * (1.0f + increasedMultiplier) * moreMultiplier;
+
+			float existingContributionValue = _cachedFinalStats.GetValueOrDefault(config.Stat, 0.0f);
+			_cachedFinalStats[config.Stat] = scaledBaseValue + existingContributionValue;
+
+			if (finalOverrides.TryGetValue(config.Stat, out var overrideValue))
+			{
+				_cachedFinalStats[config.Stat] = overrideValue;
 			}
 		}
 	}
