@@ -28,6 +28,7 @@ public static class StatDefinitionRegistry
                 LocalizationKey = entity.LocalizationKey ?? string.Empty,
                 IsRangePaired = entity.IsRangePaired,
                 PairedCounterpart = entity.PairedCounterpartId is { } pairedId ? new StatId(pairedId) : null,
+                DefaultValue = entity.DefaultValue,
                 Tags = tags
             };
 
@@ -70,4 +71,6 @@ public static class StatDefinitionRegistry
 
     public static IEnumerable<StatId> GetByTag(StringName tag) =>
         _byTag.TryGetValue(tag, out var set) ? set : Enumerable.Empty<StatId>();
+    
+    public static IEnumerable<StatDefinition> GetAll() => _definitions.Values;
 }

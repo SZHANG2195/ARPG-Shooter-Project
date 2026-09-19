@@ -6,7 +6,8 @@ namespace lethal.core.domain.character_identity;
 public class CharacterDefinition
 {
     public required string Id { get; init; }
-    public string? DisplayName { get; init; }
+    public required string TemplateId { get; set; } 
+    public required string LocalizationKey { get; init; }
     public Dictionary<StatId, float> BaseStats { get; init; } = new();
     public List<StatId> StartingResources { get; init; } = new();
     public StatPipelineFlags PipelineFlags { get; init; }

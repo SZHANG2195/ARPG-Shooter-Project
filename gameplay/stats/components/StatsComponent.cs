@@ -3,7 +3,6 @@ using lethal.common.context;
 using lethal.common.context.enums;
 using lethal.common.registry;
 using lethal.core.domain.stat_identity;
-using lethal.core.persistence;
 using lethal.core.persistence.generated;
 using lethal.gameplay.stats.data;
 using lethal.gameplay.stats.enums;
@@ -17,7 +16,8 @@ namespace lethal.gameplay.stats.components;
 public partial class StatsComponent : Node
 {
 	[Export]
-	public required StatsData CharacterData { get; set; }
+	public StatsData? CharacterData { get; set; }
+	public string? CharacterId { get; private set; }
 	private Dictionary<StatId, float> _baseStats = new();
 	private Dictionary<StatId, ResourcePool> _resourcePools = new();
 	private readonly ModifierManager _modifierManager = new();
@@ -43,45 +43,60 @@ public partial class StatsComponent : Node
 
 	public override void _Ready()
 	{
-		using var db = new GameDbContext();
-		GD.Print($"Stat count: {db.StatDefinitions.Count()}");
-		if (CharacterData == null)
-		{
-			GD.PrintErr("[StatsComponent] Warning: CharacterData is null! Please assign a StatsData resource.");
-			return;
-		}
+		if (CharacterData != null)
+    	{
+        	Initialize(CharacterData.CharacterId);
+    	}
+	}
+
+	public void Initialize(string characterId)
+	{
+		CharacterId = characterId;
 		InitializeBaseStats();
 		InitializeResourcePools();
 	}
 
 	public void InitializeBaseStats()
 	{
-    	var characterDefinition = CharacterDefinitionRegistry.Get(CharacterData.CharacterId);
+		if (CharacterId == null)
+    	{
+        	GD.PrintErr("[StatsComponent] Warning: InitializeBaseStats called with no CharacterId set!");
+        	return;
+    	}
+
+    	var characterDefinition = CharacterDefinitionRegistry.Get(CharacterId);
     	if (characterDefinition == null)
     	{
-    	    GD.PrintErr($"[StatsComponent] Warning: No character definition found for '{CharacterData.CharacterId}'!");
+    	    GD.PrintErr($"[StatsComponent] Warning: No character definition found for '{CharacterId}'!");
     	    return;
     	}
 
 		_pipelineFlags = characterDefinition.PipelineFlags;
 
-    	foreach (var stat in characterDefinition.BaseStats)
+    	foreach (var def in StatDefinitionRegistry.GetAll())
     	{
-    		_baseStats[stat.Key] = stat.Value;
+        	_baseStats[def.Id] = def.DefaultValue;
+    	}
+
+		foreach (var stat in characterDefinition.BaseStats)
+    	{
+        	_baseStats[stat.Key] = stat.Value;
     	}
 	}
 
 	public void InitializeResourcePools()
 	{
-    	var characterDef = CharacterDefinitionRegistry.Get(CharacterData.CharacterId);
+    	if (CharacterId == null) return;
+
+    	var characterDef = CharacterDefinitionRegistry.Get(CharacterId);
     	if (characterDef == null) return;
 
     	foreach (var stat in characterDef.StartingResources)
     	{
         	if (!_baseStats.ContainsKey(stat))
         	{
-            	GD.PrintErr($"[StatsComponent] Warning: Base stat for {stat} not found! Please ensure it is defined in BaseStats.");
-            	continue;
+        	    GD.PrintErr($"[StatsComponent] Warning: Base stat for {stat} not found! Please ensure it is defined in BaseStats.");
+        	    continue;
         	}
         	_resourcePools[stat] = new ResourcePool(stat);
         	_resourcePools[stat].Set(_baseStats[stat], _baseStats[stat]);

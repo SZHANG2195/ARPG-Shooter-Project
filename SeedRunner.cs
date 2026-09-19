@@ -32,10 +32,15 @@ public partial class SeedRunner : Node
 
             var seeder = new DatabaseSeedService(db);
 
+            await seeder.ClearDatabaseAsync();
+
             var orderedSeedMap = new (string FileName, Func<string, Task> SeedAction)[]
             {
                 ("TagEntity.csv", path => seeder.SeedTagEntitiesAsync(path)),
                 ("StatDefinitions.csv", path => seeder.SeedStatDefinitionsAsync(path)),
+                ("CharacterDefinitions.csv", path => seeder.SeedCharacterDefinitionsAsync(path)),
+                ("CharacterBaseStats.csv", path => seeder.SeedCharacterBaseStatsAsync(path)),
+                ("CharacterStartingResources.csv", path => seeder.SeedCharacterStartingResourcesAsync(path)),
             };
                 
             foreach (var (fileName, seedAction) in orderedSeedMap)

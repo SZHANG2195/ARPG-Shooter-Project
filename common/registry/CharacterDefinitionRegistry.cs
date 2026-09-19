@@ -4,6 +4,7 @@ using lethal.core.domain.stat_identity;
 using lethal.core.persistence;
 using lethal.core.persistence.entities.characters;
 using Microsoft.EntityFrameworkCore;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -15,31 +16,75 @@ public static class CharacterDefinitionRegistry
 
     public static void LoadAll(GameDbContext db)
     {
+        _definitions.Clear();
         var entities = db.Set<CharacterDefinitionEntity>()
             .Include(c => c.BaseStats)
             .Include(c => c.StartingResources)
             .ToList();
+        
+        var entitiesById = entities.ToDictionary(e => e.Id);
 
         foreach (var entity in entities)
         {
             var baseStats = new Dictionary<StatId, float>();
+            var startingResources = new List<StatId>();
+
+            if (!string.IsNullOrEmpty(entity.TemplateId))
+            {
+                if (entitiesById.TryGetValue(entity.TemplateId, out var template))
+                {
+                    bool isValidTemplate = true;
+
+                    if (!string.IsNullOrEmpty(template.TemplateId))
+                    {
+                        string errorMsg = $"[CharacterDefinitionRegistry] Chain inheritance error: Character '{entity.Id}' " +
+                                            $"references template '{template.Id}', which itself uses template '{template.TemplateId}'. " +
+                                            $"Multi-level inheritance is not supported.";
+                        #if DEBUG
+                        throw new InvalidOperationException(errorMsg);
+                        #else
+                        GD.PrintErr(errorMsg);
+                        isValidTemplate = false;
+                        #endif
+                    }
+
+                    if (isValidTemplate)
+                    {
+                        foreach (var stat in template.BaseStats)
+                        {
+                            baseStats[new StatId(stat.StatId)] = stat.Value;
+                        }
+                        foreach (var resource in template.StartingResources)
+                        {
+                            startingResources.Add(new StatId(resource.StatId));
+                        }
+                    }
+                }
+                else
+                {
+                    GD.PrintErr($"[CharacterDefinitionRegistry] Warning: Character '{entity.Id}' references missing TemplateId '{entity.TemplateId}'.");
+                }
+            }
+
             foreach (var stat in entity.BaseStats)
             {
                 baseStats[new StatId(stat.StatId)] = stat.Value;
             }
 
-            var startingResources = new List<StatId>();
             foreach (var resource in entity.StartingResources)
             {
-                startingResources.Add(new StatId(resource.StatId));
+                var statId = new StatId(resource.StatId);
+                if (!startingResources.Contains(statId)) startingResources.Add(statId);
             }
 
             _definitions[entity.Id] = new CharacterDefinition
             {
                 Id = entity.Id,
-                DisplayName = entity.DisplayName,
+                TemplateId = entity.TemplateId,
+                LocalizationKey = entity.LocalizationKey,
                 BaseStats = baseStats,
-                StartingResources = startingResources
+                StartingResources = startingResources,
+                PipelineFlags = entity.PipelineFlags
             };
         }
 

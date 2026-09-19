@@ -7,7 +7,10 @@ namespace lethal.core.persistence;
 public class GameDbContext : DbContext
 {
     public DbSet<StatDefinitionEntity> StatDefinitions { get; set; }
-    public DbSet<CharacterDefinitionEntity> Characters { get; set; }
+    public DbSet<TagEntity> TagEntity { get; set; }
+    public DbSet<CharacterDefinitionEntity> CharacterDefinitions { get; set; }
+    public DbSet<CharacterBaseStatEntity> CharacterBaseStats { get; set; }
+    public DbSet<CharacterStartingResourceEntity> CharacterStartingResources { get; set; }
 
     public GameDbContext() { }
     public GameDbContext(DbContextOptions<GameDbContext> options) : base(options) { }
@@ -37,22 +40,20 @@ public class GameDbContext : DbContext
             .WithMany()
             .HasForeignKey(t => t.Tag);
         
-        modelBuilder.Entity<CharacterDefinitionEntity>().HasKey(c => c.Id);
-
+        modelBuilder.Entity<CharacterDefinitionEntity>()
+            .HasKey(c => c.Id);
         modelBuilder.Entity<CharacterBaseStatEntity>()
             .HasKey(b => new { b.CharacterId, b.StatId });
         modelBuilder.Entity<CharacterBaseStatEntity>()
             .HasOne<StatDefinitionEntity>()
             .WithMany()
             .HasForeignKey(b => b.StatId);
-
         modelBuilder.Entity<CharacterStartingResourceEntity>()
             .HasKey(r => new { r.CharacterId, r.StatId });
         modelBuilder.Entity<CharacterStartingResourceEntity>()
             .HasOne<StatDefinitionEntity>()
             .WithMany()
             .HasForeignKey(r => r.StatId);
-
         modelBuilder.Entity<CharacterDefinitionEntity>()
             .HasMany(c => c.BaseStats)
             .WithOne()

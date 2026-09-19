@@ -5,6 +5,9 @@ using Microsoft.EntityFrameworkCore;
 using Godot;
 using lethal.core.persistence;
 using lethal.core.persistence.entities.stats;
+using System.Globalization;
+using lethal.core.persistence.entities.characters;
+using lethal.gameplay.stats.enums;
 
 namespace lethal.core.services;
 
@@ -38,16 +41,18 @@ public class DatabaseSeedService
 
                 string[] parts = line.Split(',');
                 if (parts.Length < 3) continue;
+                
+                string name = parts[0].Trim();
 
                 var tagEntity = new TagEntity
                 {
-                    Name = parts[0].Trim(),
+                    Name = name,
                     CodeName = parts[1].Trim(),
                     LocalizationKey = parts[2].Trim(),
                     IsPlayerVisible = bool.TryParse(parts[3].Trim(), out bool vis) && vis,
                 };
 
-                var existing = await _dbContext.Set<TagEntity>().FindAsync(tagEntity.Name);
+                var existing = await _dbContext.TagEntity.FindAsync(name);
                 if (existing == null)
                 {
                     _dbContext.Set<TagEntity>().Add(tagEntity);
@@ -95,7 +100,8 @@ public class DatabaseSeedService
                     CodeName = parts[1].Trim(),
                     LocalizationKey = parts[2].Trim(),
                     IsRangePaired = parts.Length > 3 && bool.TryParse(parts[3].Trim(), out bool parsedRange) && parsedRange,
-                    PairedCounterpartId = parts.Length > 4 && !string.IsNullOrWhiteSpace(parts[4]) ? parts[4].Trim() : null
+                    PairedCounterpartId = parts.Length > 4 && !string.IsNullOrWhiteSpace(parts[4]) ? parts[4].Trim() : null,
+                    DefaultValue = parts.Length > 5 && float.TryParse(parts[5].Trim(), CultureInfo.InvariantCulture, out float parsedValue) ? parsedValue : 0.0f
                 };
 
                 var existingStat = await _dbContext.StatDefinitions.FindAsync(statId);
@@ -104,9 +110,9 @@ public class DatabaseSeedService
                     _dbContext.StatDefinitions.Add(statEntity);
                 }
 
-                if (parts.Length > 5 && !string.IsNullOrWhiteSpace(parts[5]))
+                if (parts.Length > 6 && !string.IsNullOrWhiteSpace(parts[6]))
                 {
-                    string rawTags = parts[5].Trim().Trim('"');
+                    string rawTags = parts[6].Trim().Trim('"');
                     string[] tagNames = rawTags.Split(";");
 
                     foreach (var tagName in tagNames)
@@ -114,7 +120,7 @@ public class DatabaseSeedService
                         string cleanTag = tagName.Trim();
                         if (string.IsNullOrEmpty(cleanTag)) continue;
 
-                        bool tagExists = await _dbContext.Set<TagEntity>()
+                        bool tagExists = await _dbContext.TagEntity
                             .AnyAsync(t => t.Name == cleanTag);
 
                         if (!tagExists)
@@ -147,5 +153,171 @@ public class DatabaseSeedService
             GD.PrintErr($"[DatabaseSeed] Error: {ex.Message} | Inner: {innerMessage}");
             throw;
         }
+    }
+
+    public async Task SeedCharacterDefinitionsAsync(string csvFilePath)
+    {
+        string globalPath = ProjectSettings.GlobalizePath(csvFilePath);
+
+        if (!File.Exists(globalPath))
+        {
+            GD.PrintErr($"[DatabaseSeed] Warning: Character definitions file not found on disk at: {globalPath}");
+            return;
+        }
+
+        try
+        {
+            string[] lines = await File.ReadAllLinesAsync(globalPath);
+
+            for (int i = 1; i < lines.Length; i++)
+            {
+                string line = lines[i].Trim();
+                if (string.IsNullOrEmpty(line)) continue;
+
+                string[] parts = line.Split(',');
+                if (parts.Length < 3) continue;
+
+                string charId = parts[0].Trim();
+
+                var characterDefinitionEntity = new CharacterDefinitionEntity
+                {
+                    Id = charId,
+                    TemplateId = parts[1].Trim(),
+                    LocalizationKey = parts[2].Trim(),
+                    PipelineFlags = parts.Length > 5 && Enum.TryParse<StatPipelineFlags>(parts[3].Trim(), out StatPipelineFlags parsedValue) ? parsedValue : StatPipelineFlags.SimpleEnemy
+                };
+
+                var existing = await _dbContext.CharacterDefinitions.FindAsync(charId);
+
+                if (existing == null)
+                {
+                    _dbContext.Set<CharacterDefinitionEntity>().Add(characterDefinitionEntity);
+                }
+            }
+
+            await _dbContext.SaveChangesAsync();
+            GD.Print("[DatabaseSeed]: Character definition entities successfully seeded.");
+        }
+        catch (Exception ex)
+        {
+            string innerMessage = ex.InnerException?.Message ?? "No inner exception";
+            GD.PrintErr($"[DatabaseSeed] Error: {ex.Message} | Inner: {innerMessage}");
+            throw;
+        }
+    }
+
+    public async Task SeedCharacterBaseStatsAsync(string csvFilePath)
+    {
+        string globalPath = ProjectSettings.GlobalizePath(csvFilePath);
+
+        if (!File.Exists(globalPath))
+        {
+            GD.PrintErr($"[DatabaseSeed] Warning: Character base stats file not found on disk at: {globalPath}");
+            return;
+        }
+
+        try
+        {
+            string[] lines = await File.ReadAllLinesAsync(globalPath);
+
+            for (int i = 1; i < lines.Length; i++)
+            {
+                string line = lines[i].Trim();
+                if (string.IsNullOrEmpty(line)) continue;
+
+                string[] parts = line.Split(',');
+                if (parts.Length < 3) continue;
+
+                string charId = parts[0].Trim();
+                string statId = parts[1].Trim();
+
+                var characterBaseStatEntity = new CharacterBaseStatEntity
+                {
+                    CharacterId = charId,
+                    StatId = statId,
+                    Value = parts.Length > 2 && float.TryParse(parts[2].Trim(), out float parsedValue) ? parsedValue : 0.0f
+                };
+
+                var existing = await _dbContext.CharacterBaseStats.FindAsync(charId, statId);
+                if (existing == null)
+                {
+                    _dbContext.CharacterBaseStats.Add(characterBaseStatEntity);
+                }
+            }
+
+            await _dbContext.SaveChangesAsync();
+            GD.Print("[DatabaseSeed]: Character base stat entities successfully seeded.");
+        }
+        catch (Exception ex)
+        {
+            string innerMessage = ex.InnerException?.Message ?? "No inner exception";
+            GD.PrintErr($"[DatabaseSeed] Error: {ex.Message} | Inner: {innerMessage}");
+            throw;
+        }
+    }
+
+    public async Task SeedCharacterStartingResourcesAsync(string csvFilePath)
+    {
+        string globalPath = ProjectSettings.GlobalizePath(csvFilePath);
+
+        if (!File.Exists(globalPath))
+        {
+            GD.PrintErr($"[DatabaseSeed] Warning: Character starting resources file not found on disk at: {globalPath}");
+            return;
+        }
+
+        try
+        {
+            string[] lines = await File.ReadAllLinesAsync(globalPath);
+
+            for (int i = 1; i < lines.Length; i++)
+            {
+                string line = lines[i].Trim();
+                if (string.IsNullOrEmpty(line)) continue;
+
+                string[] parts = line.Split(',');
+                if (parts.Length < 2) continue;
+
+                string charId = parts[0].Trim();
+                string statId = parts[1].Trim();
+
+                var characterStartingResourceEntity = new CharacterStartingResourceEntity
+                {
+                    CharacterId = charId,
+                    StatId = statId,
+                };
+
+                var existingStat = await _dbContext.CharacterStartingResources.FindAsync(charId, statId);
+                if (existingStat == null)
+                {
+                    _dbContext.CharacterStartingResources.Add(characterStartingResourceEntity);
+                }
+            }
+
+            await _dbContext.SaveChangesAsync();
+            GD.Print("[DatabaseSeed]: Character starting resource entities successfully seeded.");
+        }
+        catch (Exception ex)
+        {
+            string innerMessage = ex.InnerException?.Message ?? "No inner exception";
+            GD.PrintErr($"[DatabaseSeed] Error: {ex.Message} | Inner: {innerMessage}");
+            throw;
+        }
+    }
+
+    public async Task ClearDatabaseAsync()
+    {
+        GD.Print("[DatabaseSeed]: Clearing stale database data...");
+
+        _dbContext.CharacterBaseStats.RemoveRange(_dbContext.CharacterBaseStats);
+        _dbContext.CharacterStartingResources.RemoveRange(_dbContext.CharacterStartingResources);
+        _dbContext.Set<StatTagEntity>().RemoveRange(_dbContext.Set<StatTagEntity>());
+
+        _dbContext.CharacterDefinitions.RemoveRange(_dbContext.CharacterDefinitions);
+        _dbContext.StatDefinitions.RemoveRange(_dbContext.StatDefinitions);
+        _dbContext.TagEntity.RemoveRange(_dbContext.Set<TagEntity>());
+
+        await _dbContext.SaveChangesAsync();
+        GD.Print("[DatabaseSeed]: Database successfully cleared.");
     }
 }

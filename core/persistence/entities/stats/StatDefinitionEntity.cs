@@ -8,5 +8,6 @@ public class StatDefinitionEntity
     public required string LocalizationKey { get; set; }
     public bool IsRangePaired { get; set; }
     public string? PairedCounterpartId { get; set; }
+    public float DefaultValue { get; set; } = 0.0f;
     public List<StatTagEntity> Tags { get; set; } = new();
 }
