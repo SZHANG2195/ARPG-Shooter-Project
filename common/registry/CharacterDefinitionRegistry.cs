@@ -76,7 +76,7 @@ public static class CharacterDefinitionRegistry
                 var statId = new StatId(resource.StatId);
                 if (!startingResources.Contains(statId)) startingResources.Add(statId);
             }
-
+            
             _definitions[entity.Id] = new CharacterDefinition
             {
                 Id = entity.Id,

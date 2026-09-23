@@ -9,8 +9,7 @@ public enum EquipmentSlot
 	Boots,
 	Weapon,
 	Auxiliary,
-	Module1,
-	Module2,
-	Chip
-
+	ImplantLeft,
+	ImplantRight,
+	Reactor
 }

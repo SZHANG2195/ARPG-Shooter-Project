@@ -8,6 +8,7 @@ using lethal.core.persistence.entities.stats;
 using System.Globalization;
 using lethal.core.persistence.entities.characters;
 using lethal.gameplay.stats.enums;
+using System.Text.RegularExpressions;
 
 namespace lethal.core.services;
 
@@ -89,7 +90,8 @@ public class DatabaseSeedService
                 string line = lines[i].Trim();
                 if (string.IsNullOrEmpty(line)) continue;
 
-                string[] parts = line.Split(',');
+                // Split by comma only outside of double quotes to preserve quoted CSV strings/multi-selects
+                string[] parts = Regex.Split(line, ",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)");
                 if (parts.Length < 3) continue;
 
                 string statId = parts[0].Trim();
@@ -113,7 +115,7 @@ public class DatabaseSeedService
                 if (parts.Length > 6 && !string.IsNullOrWhiteSpace(parts[6]))
                 {
                     string rawTags = parts[6].Trim().Trim('"');
-                    string[] tagNames = rawTags.Split(";");
+                    string[] tagNames = rawTags.Split(',');
 
                     foreach (var tagName in tagNames)
                     {
@@ -184,7 +186,7 @@ public class DatabaseSeedService
                     Id = charId,
                     TemplateId = parts[1].Trim(),
                     LocalizationKey = parts[2].Trim(),
-                    PipelineFlags = parts.Length > 5 && Enum.TryParse<StatPipelineFlags>(parts[3].Trim(), out StatPipelineFlags parsedValue) ? parsedValue : StatPipelineFlags.SimpleEnemy
+                    PipelineFlags = parts.Length > 3 && Enum.TryParse<StatPipelineFlags>(parts[3].Trim(), out StatPipelineFlags parsedValue) ? parsedValue : StatPipelineFlags.SimpleEnemy
                 };
 
                 var existing = await _dbContext.CharacterDefinitions.FindAsync(charId);
@@ -309,15 +311,27 @@ public class DatabaseSeedService
     {
         GD.Print("[DatabaseSeed]: Clearing stale database data...");
 
-        _dbContext.CharacterBaseStats.RemoveRange(_dbContext.CharacterBaseStats);
-        _dbContext.CharacterStartingResources.RemoveRange(_dbContext.CharacterStartingResources);
-        _dbContext.Set<StatTagEntity>().RemoveRange(_dbContext.Set<StatTagEntity>());
+        await using var transaction = await _dbContext.Database.BeginTransactionAsync();
+         
+        try
+        {
+            await _dbContext.CharacterBaseStats.ExecuteDeleteAsync();
+            await _dbContext.CharacterStartingResources.ExecuteDeleteAsync();
+            await _dbContext.Set<StatTagEntity>().ExecuteDeleteAsync();
 
-        _dbContext.CharacterDefinitions.RemoveRange(_dbContext.CharacterDefinitions);
-        _dbContext.StatDefinitions.RemoveRange(_dbContext.StatDefinitions);
-        _dbContext.TagEntity.RemoveRange(_dbContext.Set<TagEntity>());
+            await _dbContext.CharacterDefinitions.ExecuteDeleteAsync();
+            await _dbContext.StatDefinitions.ExecuteDeleteAsync();
+            await _dbContext.TagEntity.ExecuteDeleteAsync();
 
-        await _dbContext.SaveChangesAsync();
-        GD.Print("[DatabaseSeed]: Database successfully cleared.");
+            await transaction.CommitAsync();
+
+            GD.Print("[DatabaseSeed]: Database successfully cleared.");
+        }
+        catch (Exception ex)
+        {
+            await transaction.RollbackAsync();
+            GD.PrintErr($"[DatabaseSeed]: Clear failed, rolled back. {ex.Message}");
+            throw;
+        }
     }
 }

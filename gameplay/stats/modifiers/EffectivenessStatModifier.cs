@@ -21,9 +21,19 @@ public class EffectivenessModifier : StatModifier
 
         if (TargetAffixType.HasValue && target.AffixType != TargetAffixType.Value) return false;
 
-        if (AffectedStats.Count > 0 &&
-            !target.AffectedStats.Any(AffectedStats.Contains))
-            return false;
+        if (AffectedStats.Count > 0)
+        {
+            bool hasOverlap = false;
+            foreach (var stat in target.AffectedStats)
+            {
+                if (AffectedStats.Contains(stat))
+                {
+                    hasOverlap = true;
+                    break;
+                }
+            }
+            if (!hasOverlap) return false;
+        }
 
         return true;
     }

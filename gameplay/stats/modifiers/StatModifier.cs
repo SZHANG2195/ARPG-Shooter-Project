@@ -3,6 +3,7 @@ using lethal.common.context.conditions;
 using lethal.common.context.enums;
 using lethal.common.registry;
 using lethal.core.domain.stat_identity;
+using lethal.gameplay.stats.data;
 using lethal.gameplay.stats.enums;
 using System;
 using System.Collections.Generic;
@@ -120,7 +121,7 @@ public abstract class StatModifier
 
 		var modifier = new DerivedStatModifier
 		{
-			Type = type,
+			Type = ModifierType.Flat,
 			Source = source,
 			Slot = slot,
 			AffixType = affixType,
@@ -159,7 +160,7 @@ public abstract class StatModifier
 
 		var modifier = new DerivedStatModifier
 		{
-			Type = type,
+			Type = ModifierType.Flat,
 			Source = source,
 			Slot = slot,
 			AffixType = affixType,
@@ -196,7 +197,7 @@ public abstract class StatModifier
 
 		var modifier = new StatConversionModifier
 		{
-			Type = type,
+			Type = ModifierType.Flat,
 			Source = source,
 			Slot = slot,
 			AffixType = affixType,
@@ -237,7 +238,7 @@ public abstract class StatModifier
 
 		var modifier = new StatConversionModifier
 		{
-			Type = type,
+			Type = ModifierType.Flat,
 			Source = source,
 			Slot = slot,
 			AffixType = affixType,
@@ -301,6 +302,80 @@ public abstract class StatModifier
 		}
 
 		modifier.TargetSplitValues = finalSplitValues;
+		return modifier;
+	}
+
+	public static ThresholdOverrideDerivedStatModifier? CreateThresholdOverrideDerivedStatModifier(
+		ModifierType type, 
+		float ratio, 
+		Dictionary<StatId, float> sourceStatRatios, 
+		ThresholdType targetThreshold,
+		ModifierSource source, 
+		bool suppressDefault = true,
+		EquipmentSlot slot = EquipmentSlot.None, 
+		AffixType affixType = AffixType.None,
+		ModifierScope scope = ModifierScope.Stat, 
+		ICondition? condition = null,
+		ConditionScope conditionScope = ConditionScope.Persistent,
+		Dictionary<StatId, float>? manualSplitValues = null)
+	{
+		if (sourceStatRatios is null || sourceStatRatios.Count == 0)
+		{
+			GD.PrintErr($"[Modifiers] Warning: Attempted to create a threshold override modifier for target threshold {targetThreshold} with no source stat ratios!");
+			return null;
+		}
+
+		var modifier = new ThresholdOverrideDerivedStatModifier
+		{
+			Type = ModifierType.Flat,
+			Source = source,
+			Slot = slot,
+			AffixType = affixType,
+			ModifierScope = scope,
+			Condition = condition,
+        	ConditionScope = conditionScope,
+
+			SourceStatRatios = sourceStatRatios,
+			TargetThreshold = targetThreshold,
+			SuppressDefault = suppressDefault
+		};
+
+		return modifier;
+	}
+
+	public static AttributeOverrideStatModifier? CreateAttributeOverrideStatModifier(
+		ModifierType type, 
+		Dictionary<StatId, float> sourceAttributeWeights,
+		List<AttributeYieldDefinition>? targetYields = null,
+		bool suppressDefaultYields = true,
+		ModifierSource source = default, 
+		EquipmentSlot slot = EquipmentSlot.None, 
+		AffixType affixType = AffixType.None,
+		ModifierScope scope = ModifierScope.Stat, 
+		ICondition? condition = null,
+		ConditionScope conditionScope = ConditionScope.Persistent)
+	{
+		if (sourceAttributeWeights is null || sourceAttributeWeights.Count == 0)
+		{
+			GD.PrintErr($"[Modifiers] Warning: Attempted to create an attribute override modifier with no source attribute weights!");
+			return null;
+		}
+
+		var modifier = new AttributeOverrideStatModifier
+		{
+			Type = ModifierType.Flat,
+			Source = source,
+			Slot = slot,
+			AffixType = affixType,
+			ModifierScope = scope,
+			Condition = condition,
+        	ConditionScope = conditionScope,
+
+			SourceAttributeWeights = sourceAttributeWeights,
+			TargetYields = targetYields ?? new List<AttributeYieldDefinition>(),
+			SuppressDefaultYields = suppressDefaultYields
+		};
+
 		return modifier;
 	}
 }

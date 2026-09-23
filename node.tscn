@@ -1,6 +1,0 @@
-[gd_scene format=3 uid="uid://divigh5ahntlf"]
-
-[ext_resource type="Script" uid="uid://pyi77ct03q0b" path="res://SeedRunner.cs" id="1_sy5k4"]
-
-[node name="Node" type="Node" unique_id=700192968]
-script = ExtResource("1_sy5k4")

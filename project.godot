@@ -11,9 +11,13 @@ config_version=5
 [application]
 
 config/name="ShooterARPGProject"
-run/main_scene="res://node.tscn"
+run/main_scene="res://test/test.tscn"
 config/features=PackedStringArray("4.7", "C#", "Forward Plus")
 config/icon="res://icon.svg"
+
+[autoload]
+
+GameBootstrap="*uid://76eh4pwdhldx"
 
 [display]
 

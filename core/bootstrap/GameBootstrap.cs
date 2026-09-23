@@ -6,12 +6,17 @@ using lethal.core.config;
 using lethal.core.persistence;
 using lethal.core.services;
 using lethal.core.tools;
+using lethal.common.registry;
+using lethal.common.conditions;
 
-public partial class SeedRunner : Node
+namespace lethal.core.bootstrap;
+public partial class GameBootstrap : Node
 {
+
+	public static TaskCompletionSource BootstrapReady { get; } = new();
     public override async void _Ready()
     {
-        GD.Print("[SeedRunner]: Initializing database...");
+        GD.Print("[GameBootstrap]: Initializing database...");
 
         var resolvedPaths = new Dictionary<string, string>();
 
@@ -22,16 +27,15 @@ public partial class SeedRunner : Node
 
             string resolvedPath = await CsvSyncService.ResolveCsvPathAsync(fileName, url);
             resolvedPaths.Add(fileName, resolvedPath);
-        };
-            
+        }
+
         try
         {
             using var db = new GameDbContext();
             await db.Database.EnsureCreatedAsync();
-            GD.Print("[SeedRunner]: Database verified/created successfully.");
+            GD.Print("[GameBootstrap]: Database verified/created successfully.");
 
             var seeder = new DatabaseSeedService(db);
-
             await seeder.ClearDatabaseAsync();
 
             var orderedSeedMap = new (string FileName, Func<string, Task> SeedAction)[]
@@ -42,7 +46,7 @@ public partial class SeedRunner : Node
                 ("CharacterBaseStats.csv", path => seeder.SeedCharacterBaseStatsAsync(path)),
                 ("CharacterStartingResources.csv", path => seeder.SeedCharacterStartingResourcesAsync(path)),
             };
-                
+
             foreach (var (fileName, seedAction) in orderedSeedMap)
             {
                 if (resolvedPaths.TryGetValue(fileName, out var filePath) && filePath != null)
@@ -50,14 +54,20 @@ public partial class SeedRunner : Node
                     await seedAction(filePath);
                 }
             }
+
+            StatDefinitionRegistry.LoadAll(db);
+            CharacterDefinitionRegistry.LoadAll(db);
         }
-        catch (System.Exception ex)
+        catch (Exception ex)
         {
-            GD.PrintErr($"[SeedRunner] Error: Database initialization or seeding failed: {ex.Message}");
+            GD.PrintErr($"[GameBootstrap] Error: Database initialization or seeding failed: {ex.Message}");
         }
+
+        ConditionEvaluatorBootstrap.RegisterAll();
 
         DatabaseCodeGeneratorRunner.RunGenerationPipeline();
 
-        GD.Print("[SeedRunner]: Loading Complete.");
+        GD.Print("[GameBootstrap]: Loading Complete.");
+		BootstrapReady.SetResult();
     }
 }

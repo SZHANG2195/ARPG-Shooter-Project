@@ -6,11 +6,12 @@ public enum ModifierSourceCategory
 	Equipment,
 	EquipmentSocketedChip,
 	Passive,
-	PassiveSocktedChip,
+	PassiveSocketedChip,
 	Augment,
 	Skill,
 	Buff,
 	Attribute,
 	MapAffix,
-	Conversion
+	Conversion,
+	Derivation
 }

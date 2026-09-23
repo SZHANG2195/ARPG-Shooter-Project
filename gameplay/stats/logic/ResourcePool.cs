@@ -27,4 +27,5 @@ public class ResourcePool
 	public void Set(float amount, float maxLimit) => CurrentValue = Mathf.Clamp(amount, 0.0f, maxLimit);
 	public void ClampTo(float max) => CurrentValue = Mathf.Min(CurrentValue, max);
 	public bool IsEmpty() => CurrentValue <= 0;
+	
 }

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using lethal.core.domain.stat_identity;
 using lethal.core.persistence.generated;
 using lethal.gameplay.stats.enums;
@@ -26,7 +27,7 @@ public static class AttributeCalculator
 
 		if (activeModifiers != null)
 		{
-			foreach (var modifier in activeModifiers)
+			foreach (var modifier in activeModifiers.ToList())
 			{
 				if (modifier is AttributeOverrideStatModifier overrideModifier)
 				{
@@ -67,7 +68,7 @@ public static class AttributeCalculator
         {
             yield return StatModifier.CreateSingleStaticModifier(
                 ModifierType.Flat,
-                strength * 5f, Stats.Strength,
+                strength * 5f, Stats.MaxHealth,
                 new(ModifierSourceCategory.Attribute, "Strength")
             )!;
         }
@@ -75,7 +76,7 @@ public static class AttributeCalculator
         {
             yield return StatModifier.CreateSingleStaticModifier(
                 ModifierType.Increased,
-                agility * 0.5f, Stats.Agility,
+                agility * 0.5f, Stats.MovementSpeedWhileFiring,
                 new(ModifierSourceCategory.Attribute, "Agility")
             )!;
         }
@@ -83,7 +84,7 @@ public static class AttributeCalculator
         {
             yield return StatModifier.CreateSingleStaticModifier(
                 ModifierType.Flat,
-                intelligence * 5f, Stats.Intelligence,
+                intelligence * 5f, Stats.MaxFuel,
                 new(ModifierSourceCategory.Attribute, "Intelligence")
             )!;
         }

@@ -39,6 +39,13 @@ public partial class StatsComponent : Node
     	[ThresholdType.Affliction] = (Stats.AfflictionThreshold, Stats.MaxHealth, 0.5f),
 	};
 
+	private static readonly HashSet<StatId> _attributeSourceStats = new()
+	{
+    	Stats.Strength, 
+		Stats.Agility, 
+		Stats.Intelligence
+	};
+
 	private bool _isDirty = true;
 
 	public override void _Ready()
@@ -145,13 +152,29 @@ public partial class StatsComponent : Node
 		return _resourcePools.TryGetValue(maxStat, out var pool) ? pool : null;
 	}
 
-	public float? GetResourcePoolPercentage(StatId maxStat)
+	internal float? GetResourcePoolPercentage(StatId maxStat)
 	{
-		var pool = GetResourcePool(maxStat);
-		if (pool == null) return null;
+    	if (_resourcePools == null || !_resourcePools.TryGetValue(maxStat, out var pool))
+    	{
+        	return null;
+    	}
 
-		float rawMax = GetFinalStat(maxStat);
-		return rawMax > 0f ? pool.CurrentValue / rawMax : null;
+    	if (_cachedFinalStats.TryGetValue(maxStat, out float finalMax) && finalMax > 0f)
+    	{
+        	return pool.CurrentValue / finalMax;
+    	}
+
+    	if (_baseStats.TryGetValue(maxStat, out float baseVal) && baseVal > 0f)
+    	{
+        	return pool.CurrentValue / baseVal;
+    	}
+
+    	return null;
+	}
+
+	public void DebugPrintPools()
+	{
+    	GD.Print($"[StatsComponent] Active Resource Pools: {string.Join(", ", _resourcePools.Keys)}");
 	}
 
 	private void _RecalculateFinalStats()
@@ -188,44 +211,45 @@ public partial class StatsComponent : Node
 			workingMoreValues[pair.Key] = 1.0f;
 		}
 
-		var gearFlatValues = _HasFlag(StatPipelineFlags.GearFlatValues) ?
-			_CalculateGearFlatValues(allModifiers) :
-			new GearFlatValuesResult(new(), new());
-
-
+		GearFlatValuesResult gearFlatValues;
 		if (_HasFlag(StatPipelineFlags.GearFlatValues))
 		{
-			foreach (var gearEntry in gearFlatValues.AggregatedValues)
-			{
-				StatId statId = gearEntry.Key.Stat;
+    		gearFlatValues = _CalculateGearFlatValues(allModifiers);
+    		foreach (var gearEntry in gearFlatValues.AggregatedValues)
+    		{
+        		StatId statId = gearEntry.Key.Stat;
         		if (!workingFlatValues.ContainsKey(statId)) workingFlatValues[statId] = 0f;
         		workingFlatValues[statId] += gearEntry.Value;
-			}
-
-			_ApplyGearDirectScaling(gearFlatValues.AffixValues, effectivenessValues.GearDirectScaledValues, workingFlatValues);
+    		}
+    		_ApplyGearDirectScaling(gearFlatValues.AffixValues, effectivenessValues.GearDirectScaledValues, workingFlatValues);
+		}
+		else
+		{
+    		gearFlatValues = new GearFlatValuesResult(new(), new());
 		}
 
-		var attributeModifiers = _HasFlag(StatPipelineFlags.Attributes) ?
-			_ExecuteAttributeCalculations(allModifiers, workingFlatValues) :
-			Enumerable.Empty<StatModifier>();
-		allModifiers.AddRange(attributeModifiers);
-
-		var conversionModifiers = _HasFlag(StatPipelineFlags.Conversions) ?
-			_ExecuteStatConversions(allModifiers, workingFlatValues, effectivenessValues.ScaledValues) :
-			Enumerable.Empty<StatModifier>();
-		allModifiers.AddRange(conversionModifiers);
-
-		if (_HasFlag(StatPipelineFlags.DerivedStats)) _ExecutePreMultiplierDerived(allModifiers, workingFlatValues, effectivenessValues.ScaledValues);
+		if (_HasFlag(StatPipelineFlags.Attributes))
+		{
+    		var (str, agi, intel) = _ResolveAttributeSourceStats(allModifiers, workingFlatValues, workingIncreasedValues, workingMoreValues, baseOverrides, finalOverrides, effectivenessValues.ScaledValues);
+    		var attributeModifiers = AttributeCalculator.GetAttributeDerivedModifiers(str, agi, intel, allModifiers);
+    		allModifiers.AddRange(attributeModifiers);
+		}
 
 		var globalModifiers = _HasFlag(StatPipelineFlags.GlobalMultipliers) ?
 			_GroupModifiers(allModifiers) :
 			new Dictionary<StatId, List<StatModifier>>();
 
-		_PopulateWorkingMultipliers(workingIncreasedValues, workingMoreValues, baseOverrides, finalOverrides, globalModifiers, effectivenessValues.ScaledValues);
+		_PopulateGlobalFlatValues(workingFlatValues, globalModifiers, effectivenessValues.ScaledValues, baseOverrides);
+
+		if (_HasFlag(StatPipelineFlags.Conversions)) _ExecuteStatConversions(allModifiers, workingFlatValues, effectivenessValues.ScaledValues);
+
+		if (_HasFlag(StatPipelineFlags.DerivedStats)) _ExecutePreMultiplierDerived(allModifiers, workingFlatValues, effectivenessValues.ScaledValues);
+
+		_PopulateWorkingMultipliers(workingIncreasedValues, workingMoreValues, finalOverrides, globalModifiers, effectivenessValues.ScaledValues);
 
 		_CalculatePrimaryStats(workingFlatValues, workingIncreasedValues, workingMoreValues, baseOverrides, effectivenessValues.SlotStatExtraValues, gearFlatValues.AggregatedValues);
 
-    	if (_HasFlag(StatPipelineFlags.DerivedStats)) _ExecutePostMultiplierDerivedAndFinalize(allModifiers, workingFlatValues, workingIncreasedValues, workingMoreValues, gearFlatValues.AggregatedValues, effectivenessValues.SlotStatExtraValues, effectivenessValues.ScaledValues);
+    	if (_HasFlag(StatPipelineFlags.DerivedStats)) _ExecutePostMultiplierDerivedAndFinalize(allModifiers, workingFlatValues, workingIncreasedValues, workingMoreValues, gearFlatValues.AggregatedValues, effectivenessValues.SlotStatExtraValues, effectivenessValues.ScaledValues, baseOverrides);
 
 		_ApplyFinalOverrides(finalOverrides);
 
@@ -285,6 +309,9 @@ public partial class StatsComponent : Node
                 	case ModifierType.More:
                     	localMoreMultiplier *= 1.0f + rawValue;
                     	break;
+					case ModifierType.BaseOverride:
+    				case ModifierType.FinalOverride:
+        				break;
                 	default:
                     	string errorMsg = $"[StatsComponent] Error: Unhandled ModifierType '{affix.Type}' in local gear calculation!";
                     	#if DEBUG
@@ -331,45 +358,172 @@ public partial class StatsComponent : Node
 			workingFlatValues[statId] += delta;
 		}
 	}
-	private IEnumerable<StatModifier> _ExecuteAttributeCalculations(
-		IEnumerable<StatModifier> allModifiers, 
-		Dictionary<StatId, float> workingFlatValues)
+
+	private (float Strength, float Agility, float Intelligence) _ResolveAttributeSourceStats(
+    	IEnumerable<StatModifier> allModifiers,
+    	Dictionary<StatId, float> workingFlatValues,
+    	Dictionary<StatId, float> workingIncreasedValues,
+    	Dictionary<StatId, float> workingMoreValues,
+    	Dictionary<StatId, float> baseOverrides,
+		Dictionary<StatId, float> finalOverrides,
+    	Dictionary<StatModifier, float> scaledValues)
 	{
-    	float currentStrength = workingFlatValues.GetValueOrDefault(Stats.Strength, 0.0f);
-    	float currentAgility = workingFlatValues.GetValueOrDefault(Stats.Agility, 0.0f);
-    	float currentIntelligence = workingFlatValues.GetValueOrDefault(Stats.Intelligence, 0.0f);
-
-    	var attributeDerivedModifiers = AttributeCalculator.GetAttributeDerivedModifiers(
-    	currentStrength, currentAgility, currentIntelligence, allModifiers);
-
-    	foreach (var attributeModifier in attributeDerivedModifiers)
+    	foreach (var modifier in allModifiers)
     	{
-        	if (attributeModifier.Type == ModifierType.Flat)
-        	{
-            	foreach (var targetStat in attributeModifier.AffectedStats)
-            	{
-                	if (!workingFlatValues.ContainsKey(targetStat)) workingFlatValues[targetStat] = 0.0f;
+        	if (modifier.Slot != EquipmentSlot.None) continue;
+        	if (modifier is EffectivenessModifier || modifier is AttributeOverrideStatModifier) continue;
 
-                	workingFlatValues[targetStat] += attributeModifier.GetScalar();
+			if (modifier is StatConversionModifier conversionModifier)
+    		{
+        		if (conversionModifier.TargetSplitValues == null || conversionModifier.TargetSplitValues.Count == 0) continue;
+
+        		bool targetsAnyAttribute = conversionModifier.TargetSplitValues.Keys.Any(s => _attributeSourceStats.Contains(s));
+        		if (!targetsAnyAttribute) continue;
+
+        		bool targetsAllAttributes = conversionModifier.TargetSplitValues.Keys.All(s => _attributeSourceStats.Contains(s));
+        		if (!targetsAllAttributes)
+        		{
+            		string errorMsg = $"[StatsComponent] Error: StatConversionModifier '{conversionModifier.Source}' splits between attribute and non-attribute stats — not supported!";
+            		#if DEBUG
+            		throw new InvalidOperationException(errorMsg);
+            		#else
+            		GD.PrintErr(errorMsg);
+					continue;
+            		#endif
+        		}
+
+        		StatId sourceStat = conversionModifier.SourceStat;
+        		if (!workingFlatValues.TryGetValue(sourceStat, out float sourceValue) || sourceValue <= 0f) continue;
+
+        		float effectiveRatio = scaledValues.TryGetValue(conversionModifier, out var scaledConversion) ? scaledConversion : conversionModifier.GetScalar();
+        		float totalConvertedAmount = sourceValue * effectiveRatio;
+
+        		foreach (var split in conversionModifier.TargetSplitValues)
+        		{
+            		float finalConversionValue = totalConvertedAmount * split.Value;
+            		if (finalConversionValue > 0f)
+            		{
+                		workingFlatValues[split.Key] = workingFlatValues.GetValueOrDefault(split.Key, _baseStats.GetValueOrDefault(split.Key, 0f)) + finalConversionValue;
+            		}
+        		}
+
+        		continue;
+    		}
+
+        	foreach (var targetStat in modifier.AffectedStats)
+        	{
+            	if (!_attributeSourceStats.Contains(targetStat)) continue;
+
+				if (modifier is DerivedStatModifier derivedModifier)
+        		{
+            		float sourceValue = workingFlatValues.GetValueOrDefault(derivedModifier.SourceStat, 0f);
+            		float ratio = scaledValues.TryGetValue(derivedModifier, out var scaledDerivation) ? scaledDerivation : derivedModifier.GetScalar();
+            		workingFlatValues[targetStat] = workingFlatValues.GetValueOrDefault(targetStat, _baseStats.GetValueOrDefault(targetStat, 0f)) + sourceValue * ratio;
+            		continue;
+        		}
+
+            	float value = scaledValues.TryGetValue(modifier, out var scaled) ? scaled : modifier.GetValue();
+
+            	switch (modifier.Type)
+            	{
+                	case ModifierType.Flat:
+                    	workingFlatValues[targetStat] = workingFlatValues.GetValueOrDefault(targetStat, _baseStats.GetValueOrDefault(targetStat, 0f)) + value;
+                    	break;
+                	case ModifierType.Increased:
+                    	workingIncreasedValues[targetStat] = workingIncreasedValues.GetValueOrDefault(targetStat, 0f) + value;
+                    	break;
+                	case ModifierType.More:
+                    	workingMoreValues[targetStat] = workingMoreValues.GetValueOrDefault(targetStat, 1f) * (1.0f + value);
+                    	break;
+                	case ModifierType.BaseOverride:
+                    	baseOverrides[targetStat] = value;
+                    	break;
+					case ModifierType.FinalOverride:
+                    	if (finalOverrides.ContainsKey(targetStat))
+                    	{
+                        	string warning = $"[StatsComponent] Warning: Multiple FinalOverrides found for {targetStat}! '{modifier.Source}' is overriding existing final value.";
+                        	#if DEBUG
+                        	throw new InvalidOperationException(warning);
+                        	#else
+                        	GD.PrintErr(warning);
+                        	#endif
+                    	}
+                    	finalOverrides[targetStat] = value;
+                    	break;
             	}
         	}
     	}
 
-    	return attributeDerivedModifiers;
+    	float Resolve(StatId stat)
+    	{
+			if (finalOverrides.TryGetValue(stat, out var overrideVal)) return overrideVal;
+
+        	float defaultBase = _baseStats.GetValueOrDefault(stat, 0f);
+        	float effectiveBase = baseOverrides.GetValueOrDefault(stat, defaultBase);
+        	float flat = workingFlatValues.GetValueOrDefault(stat, defaultBase) - defaultBase;
+        	float increased = workingIncreasedValues.GetValueOrDefault(stat, 0f);
+        	float more = workingMoreValues.GetValueOrDefault(stat, 1f);
+        	return (effectiveBase + flat) * (1.0f + increased) * more;
+    	}
+
+    	return (Resolve(Stats.Strength), Resolve(Stats.Agility), Resolve(Stats.Intelligence));
 	}
 
-	private IEnumerable<StatModifier> _ExecuteStatConversions(
+	private void _PopulateGlobalFlatValues(
+		Dictionary<StatId, float> workingFlatValues,
+		Dictionary<StatId, List<StatModifier>> globalModifiers,
+		Dictionary<StatModifier, float> scaledValues,
+		Dictionary<StatId, float> baseOverrides)
+	{
+		foreach (var pair in globalModifiers)
+		{
+			StatId statId = pair.Key;
+			var modifiers = pair.Value;
+
+			foreach (var modifier in modifiers)
+			{
+				if (modifier.Type != ModifierType.Flat && modifier.Type != ModifierType.BaseOverride) continue;
+
+				float value = scaledValues.TryGetValue(modifier, out var scaled) ? scaled : modifier.GetValue();
+
+				switch (modifier.Type)
+				{
+					case ModifierType.Flat:
+    					if (!workingFlatValues.ContainsKey(statId)) workingFlatValues[statId] = _baseStats.GetValueOrDefault(statId, 0f);
+    					workingFlatValues[statId] += value;
+    					break;
+					case ModifierType.BaseOverride:
+						if (baseOverrides.ContainsKey(statId))
+						{
+							string warning = $"[StatsComponent] Warning: Multiple BaseOverrides found for {statId}! '{modifier.Source}' is overriding existing base value.";
+							#if DEBUG
+							throw new InvalidOperationException(warning);
+							#else
+							GD.PrintErr(warning);
+							#endif
+						}
+						baseOverrides[statId] = value;
+						break;
+				}
+			}
+		}
+	}
+
+	private void _ExecuteStatConversions(
 		IEnumerable<StatModifier> allModifiers, 
 		Dictionary<StatId, float> workingFlatValues,
 		Dictionary<StatModifier, float> scaledValues)
 	{
-		var generatedModifiers = new List<StatModifier>();
+		var targetAdditions = new Dictionary<StatId, float>();
 		var siphonedAmounts = new Dictionary<StatId, float>();
 
 		foreach (var modifier in allModifiers)
 		{
 			if (modifier is StatConversionModifier conversionModifier && conversionModifier.TargetSplitValues != null && conversionModifier.TargetSplitValues.Count > 0)
 			{
+				bool targetsAnyAttribute = conversionModifier.TargetSplitValues.Keys.Any(s => _attributeSourceStats.Contains(s));
+        		if (targetsAnyAttribute) continue;
+
 				StatId sourceStat = conversionModifier.SourceStat;
 
 				if (!workingFlatValues.TryGetValue(sourceStat, out float sourceValue) || sourceValue <= 0.0f) continue;
@@ -392,14 +546,8 @@ public partial class StatsComponent : Node
 
 					if (finalConversionValue > 0.0f)
 					{
-						var conversionMod = StatModifier.CreateSingleStaticModifier(
-							ModifierType.Flat,
-							finalConversionValue,
-							targetStat,
-							new ModifierSource(ModifierSourceCategory.Conversion, $"Converted from {sourceStat}")
-						);
-
-						if (conversionMod != null) generatedModifiers.Add(conversionMod);
+						float currentTargetAdd = targetAdditions.GetValueOrDefault(targetStat, 0.0f);
+						targetAdditions[targetStat] = currentTargetAdd + finalConversionValue;
 					}
 				}
 			}
@@ -413,8 +561,18 @@ public partial class StatsComponent : Node
 				if (workingFlatValues[siphon.Key] < 0.0f) workingFlatValues[siphon.Key] = 0.0f;
 			}
 		}
+		
+		foreach (var addition in targetAdditions)
+		{
+			StatId targetStat = addition.Key;
+			float addedValue = addition.Value;
 
-		return generatedModifiers;
+			if (!workingFlatValues.ContainsKey(targetStat))
+			{
+				workingFlatValues[targetStat] = _baseStats.GetValueOrDefault(targetStat, 0f);
+			}
+			workingFlatValues[targetStat] += addedValue;
+		}
 	}
 
 	private void _ExecutePreMultiplierDerived(
@@ -426,6 +584,9 @@ public partial class StatsComponent : Node
 		{
 			if (modifier is DerivedStatModifier derivedModifier && derivedModifier.Phase == ModifierExecutionPhase.PreMultipliers)
 			{
+				bool targetsAttribute = derivedModifier.AffectedStats.Any(s => _attributeSourceStats.Contains(s));
+            	if (targetsAttribute) continue;
+
 				if (workingFlatValues.TryGetValue(derivedModifier.SourceStat, out float sourceValue))
 				{
 					float effectiveRatio = scaledValues.TryGetValue(derivedModifier, out var scaled) ? scaled : derivedModifier.GetScalar();
@@ -539,10 +700,9 @@ public partial class StatsComponent : Node
 		return globalModifierByStat;
 	}
 
-	public void _PopulateWorkingMultipliers(
+	private void _PopulateWorkingMultipliers(
 		Dictionary<StatId, float> workingIncreasedValues,
 		Dictionary<StatId, float> workingMoreValues,
-		Dictionary<StatId, float> baseOverrides,
 		Dictionary<StatId, float> finalOverrides,
 		Dictionary<StatId, List<StatModifier>> globalModifiers,
 		Dictionary<StatModifier, float> scaledValues)
@@ -550,11 +710,17 @@ public partial class StatsComponent : Node
 		foreach (var pair in globalModifiers)
 		{
 			StatId statId = pair.Key;
+
+			if (_attributeSourceStats.Contains(statId)) continue;
+
 			var modifiers = pair.Value;
 
 			foreach (var modifier in modifiers)
 			{
-				float value = scaledValues.TryGetValue(modifier, out var scaled) ? scaled : modifier.GetScalar();
+				if (modifier.Type != ModifierType.Increased && modifier.Type != ModifierType.More && modifier.Type != ModifierType.FinalOverride) continue;
+				if (_attributeSourceStats.Contains(statId)) continue;
+
+				float value = scaledValues.TryGetValue(modifier, out var scaled) ? scaled : modifier.GetValue();
 
 				switch (modifier.Type)
 				{
@@ -565,18 +731,6 @@ public partial class StatsComponent : Node
 					case ModifierType.More:
 						if (!workingMoreValues.ContainsKey(statId)) workingMoreValues[statId] = 1.0f;
 						workingMoreValues[statId] += value;
-						break;
-					case ModifierType.BaseOverride:
-						if (baseOverrides.ContainsKey(statId))
-						{
-							string warning = $"[StatsComponent] Warning: Multiple BaseOverrides found for {statId}! '{modifier.Source}' is overriding existing base value.";
-							#if DEBUG
-							throw new InvalidOperationException(warning);
-							#else
-							GD.PrintErr(warning);
-							#endif
-						}
-						baseOverrides[statId] = value;
 						break;
 					case ModifierType.FinalOverride:
 						if (finalOverrides.ContainsKey(statId))
@@ -659,10 +813,28 @@ public partial class StatsComponent : Node
 		Dictionary<StatId, float> workingMoreValues,
 		Dictionary<(EquipmentSlot Slot, StatId Stat), float> resolvedGearFlatValues,
 		Dictionary<(EquipmentSlot Slot, StatId Stat), (float IncreasedMultiplier, float MoreMultiplier)> slotStatExtraValues,
-		Dictionary<StatModifier, float> scaledValues)
+		Dictionary<StatModifier, float> scaledValues,
+		Dictionary<StatId, float> baseOverrides)
 	{
 		foreach (var modifier in allModifiers)
 		{
+			if (modifier.Slot != EquipmentSlot.None) continue;
+
+    		if (modifier is DerivedStatModifier derived && derived.Phase == ModifierExecutionPhase.PostMultipliers)
+    		{
+        		bool targetsAttribute = derived.AffectedStats.Any(s => _attributeSourceStats.Contains(s));
+        		if (targetsAttribute)
+        		{
+            		string errorMsg = $"[StatsComponent] Error: A PostMultipliers-phase DerivedStatModifier cannot target an attribute source stat (Strength/Agility/Intelligence) — its source data isn't resolved yet at attribute-resolution time!";
+            		#if DEBUG
+            		throw new InvalidOperationException(errorMsg);
+            		#else
+            		GD.PrintErr(errorMsg);
+            		continue;
+            		#endif
+        		}
+    		}
+
 			float sourceValue = 0.0f;
 
 			if (modifier is DerivedStatModifier derivedModifier && derivedModifier.Phase == ModifierExecutionPhase.PostMultipliers)
@@ -682,6 +854,7 @@ public partial class StatsComponent : Node
 				foreach (var targetStat in derivedModifier.AffectedStats)
 				{
 					float defaultBaseValue = _baseStats.GetValueOrDefault(targetStat, 0.0f);
+					float effectiveBaseValue = baseOverrides.GetValueOrDefault(targetStat, defaultBaseValue);
 
 					float existingFlatValues = workingFlatValues.GetValueOrDefault(targetStat, defaultBaseValue) - defaultBaseValue;
 					float totalFlatValues = existingFlatValues + derivedFlatValue;
@@ -695,7 +868,7 @@ public partial class StatsComponent : Node
                     	moreMultiplier *= extra.MoreMultiplier;
                 	}
 
-					float finalDerivedStatValue = (defaultBaseValue + totalFlatValues) * (1.0f + increasedMultiplier) * moreMultiplier;
+					float finalDerivedStatValue = (effectiveBaseValue + totalFlatValues) * (1.0f + increasedMultiplier) * moreMultiplier;
 					_cachedFinalStats[targetStat] = finalDerivedStatValue;
 				}
 			}
@@ -775,10 +948,4 @@ public partial class StatsComponent : Node
 	}
 
 	private bool _HasFlag(StatPipelineFlags flag) => (_pipelineFlags & flag) != 0;
-
-    internal float? GetResourcePercentage(StatId maxHealth)
-    {
-        throw new NotImplementedException();
-    }
-
 }
