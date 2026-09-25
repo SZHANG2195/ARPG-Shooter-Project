@@ -1,4 +1,4 @@
-namespace lethal.gameplay.stats.enums;
+namespace lethal.gameplay.equipment.enums;
 public enum EquipmentSlot
 {
 	None,

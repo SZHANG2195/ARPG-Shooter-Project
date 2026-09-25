@@ -1,4 +1,5 @@
 using System;
+using lethal.gameplay.equipment.enums;
 using lethal.gameplay.stats.enums;
 
 namespace lethal.gameplay.stats.modifiers;

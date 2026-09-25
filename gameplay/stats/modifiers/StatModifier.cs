@@ -3,6 +3,7 @@ using lethal.common.context.conditions;
 using lethal.common.context.enums;
 using lethal.common.registry;
 using lethal.core.domain.stat_identity;
+using lethal.gameplay.equipment.enums;
 using lethal.gameplay.stats.data;
 using lethal.gameplay.stats.enums;
 using System;

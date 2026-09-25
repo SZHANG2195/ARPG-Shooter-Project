@@ -4,6 +4,7 @@ using lethal.common.context.enums;
 using lethal.common.registry;
 using lethal.core.domain.stat_identity;
 using lethal.core.persistence.generated;
+using lethal.gameplay.equipment.enums;
 using lethal.gameplay.stats.data;
 using lethal.gameplay.stats.enums;
 using lethal.gameplay.stats.logic;
@@ -45,6 +46,9 @@ public partial class StatsComponent : Node
 		Stats.Agility, 
 		Stats.Intelligence
 	};
+
+	private double _lastRecalculationTime = 0.0;
+	private const double MinRecalculationIntervalSeconds = 0.05;
 
 	private bool _isDirty = true;
 
@@ -105,7 +109,9 @@ public partial class StatsComponent : Node
         	    GD.PrintErr($"[StatsComponent] Warning: Base stat for {stat} not found! Please ensure it is defined in BaseStats.");
         	    continue;
         	}
-        	_resourcePools[stat] = new ResourcePool(stat);
+        	var pool = new ResourcePool(stat);
+        	pool.MeaningfulChange += () => _isDirty = true;
+        	_resourcePools[stat] = pool;
         	_resourcePools[stat].Set(_baseStats[stat], _baseStats[stat]);
     	}
 	}
@@ -130,11 +136,14 @@ public partial class StatsComponent : Node
 
 	public float GetFinalStat(StatId statId)
 	{
-		if (_isDirty)
-		{
-			_RecalculateFinalStats();
-			_isDirty = false;
-		}
+		double now = Time.GetTicksMsec() / 1000.0;
+
+		if (_isDirty && (now - _lastRecalculationTime >= MinRecalculationIntervalSeconds))
+    	{
+        	_RecalculateFinalStats();
+        	_isDirty = false;
+        	_lastRecalculationTime = now;
+    	}
 
 		if (_cachedFinalStats.TryGetValue(statId, out var finalValue))
 		{

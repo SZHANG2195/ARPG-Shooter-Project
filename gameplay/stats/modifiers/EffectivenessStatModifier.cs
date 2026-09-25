@@ -1,5 +1,5 @@
+using lethal.gameplay.equipment.enums;
 using lethal.gameplay.stats.enums;
-using System.Linq;
 
 namespace lethal.gameplay.stats.modifiers;
 public class EffectivenessModifier : StatModifier
