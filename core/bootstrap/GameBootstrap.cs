@@ -2,72 +2,129 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Godot;
+using Microsoft.Data.Sqlite;
 using lethal.core.config;
-using lethal.core.persistence;
 using lethal.core.services;
 using lethal.core.tools;
-using lethal.common.registry;
-using lethal.common.conditions;
 
 namespace lethal.core.bootstrap;
+
 public partial class GameBootstrap : Node
 {
+    // Needed so the game knows when it can move on from bootstrap
+    public static TaskCompletionSource BootstrapReady { get; } = new();
 
-	public static TaskCompletionSource BootstrapReady { get; } = new();
+    private static readonly string[] CacheTables =
+    [
+        "GameMetaData",
+        "Localizations",
+        "DefinitionTags",
+        "DefinitionStats",
+        "DefinitionStatusEffects",
+        "DefinitionFactions",
+        "DefinitionCharacters",
+        "DefinitionItemProfileKeys",
+        "DefinitionItems",
+        "DefinitionEquipment",
+        "DefinitionAugments",
+        "DefinitionAffixes",
+        "DefinitionPayloads"
+    ];
+
     public override async void _Ready()
     {
-        GD.Print("[GameBootstrap]: Initializing database...");
-
-        var resolvedPaths = new Dictionary<string, string>();
-
-        foreach (var kvp in GameDataConfig.SheetUrls)
-        {
-            string fileName = kvp.Key;
-            string url = kvp.Value;
-
-            string resolvedPath = await CsvSyncService.ResolveCsvPathAsync(fileName, url);
-            resolvedPaths.Add(fileName, resolvedPath);
-        }
+        GD.Print("[GameBootstrap]: Initializing database cache...");
 
         try
         {
-            using var db = new GameDbContext();
-            await db.Database.EnsureCreatedAsync();
-            GD.Print("[GameBootstrap]: Database verified/created successfully.");
+            var dbPath = ProjectSettings.GlobalizePath("res://data/game_data.db");
+            
+            // Ensure directory exists
+            System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(dbPath)!);
 
-            var seeder = new DatabaseSeedService(db);
-            await seeder.ClearDatabaseAsync();
-
-            var orderedSeedMap = new (string FileName, Func<string, Task> SeedAction)[]
+            var connectionString = new SqliteConnectionStringBuilder
             {
-                ("TagEntity.csv", path => seeder.SeedTagEntitiesAsync(path)),
-                ("StatDefinitions.csv", path => seeder.SeedStatDefinitionsAsync(path)),
-                ("CharacterDefinitions.csv", path => seeder.SeedCharacterDefinitionsAsync(path)),
-                ("CharacterBaseStats.csv", path => seeder.SeedCharacterBaseStatsAsync(path)),
-                ("CharacterStartingResources.csv", path => seeder.SeedCharacterStartingResourcesAsync(path)),
-            };
+                DataSource = dbPath,
+                Password = DatabaseSecurityConfig.GetEncryptionKey()
+            }.ToString();
 
-            foreach (var (fileName, seedAction) in orderedSeedMap)
+            await using var connection = new SqliteConnection(connectionString);
+            await connection.OpenAsync();
+
+            // 1. Check if the local GameMetaData table exists and read local version
+            int localVersion = 0;
+            var checkTableCmd = connection.CreateCommand();
+            checkTableCmd.CommandText = "SELECT name FROM sqlite_master WHERE type='table' AND name='GameMetaData';";
+            var tableExists = await checkTableCmd.ExecuteScalarAsync() != null;
+
+            if (tableExists)
             {
-                if (resolvedPaths.TryGetValue(fileName, out var filePath) && filePath != null)
+                var getVersionCmd = connection.CreateCommand();
+                getVersionCmd.CommandText = "SELECT payload_json FROM GameMetaData LIMIT 1;";
+                using var reader = await getVersionCmd.ExecuteReaderAsync();
+                if (await reader.ReadAsync())
                 {
-                    await seedAction(filePath);
+                    string json = reader.GetString(0);
+                    using var doc = System.Text.Json.JsonDocument.Parse(json);
+                    if (doc.RootElement.TryGetProperty("version", out var vProp) || doc.RootElement.TryGetProperty("Version", out vProp))
+                    {
+                        localVersion = vProp.GetInt32();
+                    }
                 }
             }
 
-            StatDefinitionRegistry.LoadAll(db);
-            CharacterDefinitionRegistry.LoadAll(db);
+            // 2. Fetch remote version from Supabase
+            int remoteVersion = -1;
+            string? metaJson = await SupabaseSyncService.FetchTableJsonAsync("GameMetaData");
+
+            if (!string.IsNullOrWhiteSpace(metaJson))
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(metaJson);
+                if (doc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Array && doc.RootElement.GetArrayLength() > 0)
+                {
+                    var firstElem = doc.RootElement[0];
+                    if (firstElem.TryGetProperty("version", out var vProp) || firstElem.TryGetProperty("Version", out vProp))
+                    {
+                        remoteVersion = vProp.GetInt32();
+                    }
+                }
+            }
+
+            GD.Print($"[GameBootstrap]: Version Check -> Local: {localVersion}, Remote: {remoteVersion}");
+
+            // 3. Sync if out of date, empty, or table doesn't exist yet
+            if (remoteVersion > localVersion || localVersion == 0 || !tableExists)
+            {
+                GD.Print("[GameBootstrap]: New data version detected or local DB empty. Syncing from Supabase...");
+
+                var tablePayloads = new Dictionary<string, string>();
+                foreach (var tableName in CacheTables)
+                {
+                    string? json = (tableName == "GameMetaData" && metaJson != null) 
+                        ? metaJson 
+                        : await SupabaseSyncService.FetchTableJsonAsync(tableName);
+
+                    if (!string.IsNullOrWhiteSpace(json))
+                    {
+                        tablePayloads[tableName] = json;
+                    }
+                }
+
+                var seeder = new DatabaseSeedService();
+                await seeder.SeedAllFromSupabaseAsync(tablePayloads);
+                GD.Print("[GameBootstrap]: Supabase sync and seed complete.");
+            }
+            else
+            {
+                GD.Print("[GameBootstrap]: Local database is up to date. Skipping network sync.");
+            }
         }
         catch (Exception ex)
         {
             GD.PrintErr($"[GameBootstrap] Error: Database initialization or seeding failed: {ex.Message}");
         }
 
-        ConditionEvaluatorBootstrap.RegisterAll();
-
-        DatabaseCodeGeneratorRunner.RunGenerationPipeline();
-
         GD.Print("[GameBootstrap]: Loading Complete.");
-		BootstrapReady.SetResult();
+        BootstrapReady.SetResult();
     }
 }
