@@ -12,6 +12,6 @@ A modular C# stat calculation engine designed for top-down action RPGs, featurin
 ## Tech Stack
 - **Language:** C#
 - **Engine / Environment:** Godot
-- **Data Storage & Ingestion:** SQLite, CSV
+- **Data Storage & Ingestion:** SQLite, CSV (Migrating to PostgreSQL Database)
 - 
 ## Currently WIP
