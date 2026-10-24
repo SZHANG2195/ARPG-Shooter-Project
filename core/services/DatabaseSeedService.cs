@@ -39,8 +39,7 @@ public class DatabaseSeedService
 
                 if (string.IsNullOrWhiteSpace(jsonPayload)) continue;
 
-                // 1. Ensure a simple cache table exists for this data type
-                // (id + raw json blob)
+                // No guarantee that the table exists, so create it if it doesn't
                 var createTableCmd = connection.CreateCommand();
                 createTableCmd.CommandText = $@"
                     CREATE TABLE IF NOT EXISTS {tableName} (
@@ -50,8 +49,7 @@ public class DatabaseSeedService
                     DELETE FROM {tableName};"; // Clear old cache data before inserting fresh sync
                 await createTableCmd.ExecuteNonQueryAsync();
 
-                // 2. Insert the raw JSON payload records
-                // Assuming Supabase returns a JSON array of objects with an 'id' field
+
                 using var jsonDoc = System.Text.Json.JsonDocument.Parse(jsonPayload);
                 if (jsonDoc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Array)
                 {

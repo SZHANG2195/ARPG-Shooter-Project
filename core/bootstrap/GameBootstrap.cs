@@ -5,7 +5,6 @@ using Godot;
 using Microsoft.Data.Sqlite;
 using lethal.core.config;
 using lethal.core.services;
-using lethal.core.tools;
 
 namespace lethal.core.bootstrap;
 
@@ -51,7 +50,7 @@ public partial class GameBootstrap : Node
             await using var connection = new SqliteConnection(connectionString);
             await connection.OpenAsync();
 
-            // 1. Check if the local GameMetaData table exists and read local version
+            // Metadata check allows us to skip network calls if the local database is already up to date
             int localVersion = 0;
             var checkTableCmd = connection.CreateCommand();
             checkTableCmd.CommandText = "SELECT name FROM sqlite_master WHERE type='table' AND name='GameMetaData';";
@@ -73,7 +72,6 @@ public partial class GameBootstrap : Node
                 }
             }
 
-            // 2. Fetch remote version from Supabase
             int remoteVersion = -1;
             string? metaJson = await SupabaseSyncService.FetchTableJsonAsync("GameMetaData");
 
@@ -92,7 +90,6 @@ public partial class GameBootstrap : Node
 
             GD.Print($"[GameBootstrap]: Version Check -> Local: {localVersion}, Remote: {remoteVersion}");
 
-            // 3. Sync if out of date, empty, or table doesn't exist yet
             if (remoteVersion > localVersion || localVersion == 0 || !tableExists)
             {
                 GD.Print("[GameBootstrap]: New data version detected or local DB empty. Syncing from Supabase...");

@@ -2,12 +2,14 @@ using Godot;
 using Microsoft.Data.Sqlite;
 using lethal.core.config;
 using System.Text.Json;
+using lethal.core.domain.localization;
+using lethal.core.domain.localizations;
 
 namespace lethal.core.tools;
 
-public partial class LocalizationLoader
+public class LocalizationLoader
 {
-    public static void LoadLocalizationsIntoGodot()
+    public static LocalizationKeySet LoadLocalizationsIntoGodot()
     {
         var dbPath = ProjectSettings.GlobalizePath("res://data/game_data.db");
         var connectionString = new SqliteConnectionStringBuilder
@@ -17,6 +19,7 @@ public partial class LocalizationLoader
         }.ToString();
 
         var enTranslation = new Translation { Locale = "en" };
+        var keys = new LocalizationKeySet();
         int count = 0;
 
         try
@@ -41,27 +44,45 @@ public partial class LocalizationLoader
                 string? en = root.TryGetProperty("en", out var eProp) ? eProp.GetString() 
                            : root.TryGetProperty("En", out eProp) ? eProp.GetString() : null;
 
-                if (!string.IsNullOrEmpty(key) && !string.IsNullOrEmpty(en))
+                if (string.IsNullOrWhiteSpace(key))
                 {
-                    enTranslation.AddMessage(key, en);
-                    count++;
+                    GD.PushWarning("[LocalizationLoader] Skipped a row with no key.");
+                    continue;
                 }
+                
+                if (string.IsNullOrWhiteSpace(en))
+                {
+                    GD.PushWarning($"[LocalizationLoader] Key '{key}' has no En text.");
+                    continue;
+                }
+
+                bool dataOnly = LocalizationKeySet.IsDataOnlyMarker(en);
+
+                if (!keys.Add(new LocalizationKey(key), dataOnly))
+                {
+                    GD.PushWarning($"[LocalizationLoader] Duplicate key '{key}'.");
+                    continue;
+                }
+
+                if (dataOnly) continue;
+
+                if (en.TrimStart().StartsWith('['))
+                GD.PushWarning($"[LocalizationLoader] '{key}' starts with '[' but isn't the data-only marker.");
+
+                enTranslation.AddMessage(key, en);
+                count++;
             }
         }
         catch (System.Exception ex)
         {
-            GD.PrintErr($"[LocalizationLoader] Failed to load localizations: {ex.Message}");
-            return;
+        GD.PrintErr($"[LocalizationLoader] Failed to load localizations: {ex.Message}");
+        throw;   // see below
         }
 
         if (count > 0)
-        {
             TranslationServer.AddTranslation(enTranslation);
-            GD.Print($"[LocalizationLoader]: Loaded {count} localizations into TranslationServer.");
-        }
-        else
-        {
-            GD.Print("[LocalizationLoader]: No localizations found to load.");
-        }
+
+        GD.Print($"[LocalizationLoader]: Loaded {count} localizations ({keys} keys total).");
+        return keys;
     }
 }
