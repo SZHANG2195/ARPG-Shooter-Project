@@ -1,6 +1,7 @@
 using System.Linq;
 using Godot;
 using lethal.common.registries;
+using lethal.common.registries.tags;
 using lethal.core.domain.payloads;
 using lethal.core.domain.payloads.enums;
 using lethal.core.domain.tags;
@@ -26,6 +27,24 @@ public static class GameDataSmokeTest
 
         // Status tags (7 of your 11 effects carry status.affliction)
         Check(d.StatusEffects.All.Count(s => d.StatusEffects.IsAffliction(s.Id)) == 7, "affliction count");
+
+        // stat and item tag sets contain everything they declare
+        Check(d.Stats.All.All(s => s.TagIds.All(t => d.Stats.TagsOf(s.Id).Contains(t))),
+            "stat tag sets contain their declared tags");
+        Check(d.Items.All.All(i => d.Items.TagsOf(i.Id).Contains(i.CategoryTagId)),
+            "item tag sets contain their category tag");
+
+        // the affix type buckets partition the table
+        Check(d.Affixes.All.Select(a => a.AffixTypeTagId).Distinct().Sum(t => d.Affixes.OfType(t).Length) == d.Affixes.Count,
+            "affix buckets add up to the affix count");
+
+        // the faction index lists every character under each faction it declares
+        Check(d.Characters.All.All(c => c.FactionTagIds.All(f => d.Characters.InFaction(f).Contains(c))),
+            "every character appears under its factions");
+
+        // code-owned tags and namespaces still exist in the data
+        Check(d.Tags.Contains(StatusTags.Affliction) && d.Tags.Contains(StatusTags.Debuff), "status tags exist");
+        Check(!d.Tags.Under(TagNamespaces.AffixKeyword).IsEmpty, "affix keyword namespace has tags");
     }
 
     private static void Check(bool ok, string what)
