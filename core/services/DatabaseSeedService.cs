@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using Godot;
 using Microsoft.Data.Sqlite;
-using lethal.core.config;
 using System.Linq;
 
 namespace lethal.core.services;
@@ -12,14 +11,9 @@ public class DatabaseSeedService
 {
     private readonly string _connectionString;
 
-    public DatabaseSeedService()
+    public DatabaseSeedService(string connectionString)
     {
-        var dbPath = ProjectSettings.GlobalizePath("res://data/game_data.db");
-        _connectionString = new SqliteConnectionStringBuilder
-        {
-            DataSource = dbPath,
-            Password = DatabaseSecurityConfig.GetEncryptionKey()
-        }.ToString();
+        _connectionString = connectionString;
     }
 
     public async Task SeedAllFromSupabaseAsync(Dictionary<string, string> tableJsonPayloads)
@@ -27,9 +21,8 @@ public class DatabaseSeedService
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync();
 
-        // Use a transaction for fast, atomic bulk-inserting
+        //i love atomicity
         await using var transaction = connection.BeginTransaction();
-
         try
         {
             foreach (var kvp in tableJsonPayloads)
@@ -39,14 +32,14 @@ public class DatabaseSeedService
 
                 if (string.IsNullOrWhiteSpace(jsonPayload)) continue;
 
-                // No guarantee that the table exists, so create it if it doesn't
+                //table might not exist, i.e. deleted for some reason
                 var createTableCmd = connection.CreateCommand();
                 createTableCmd.CommandText = $@"
                     CREATE TABLE IF NOT EXISTS {tableName} (
                         id TEXT PRIMARY KEY,
                         payload_json TEXT NOT NULL
                     );
-                    DELETE FROM {tableName};"; // Clear old cache data before inserting fresh sync
+                    DELETE FROM {tableName};"; //make sure table is blank, no point in wrestling with upserts and deletes
                 await createTableCmd.ExecuteNonQueryAsync();
 
 

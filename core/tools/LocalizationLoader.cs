@@ -1,23 +1,14 @@
 using Godot;
 using Microsoft.Data.Sqlite;
-using lethal.core.config;
 using System.Text.Json;
-using lethal.core.domain.localization;
 using lethal.core.domain.localizations;
 
 namespace lethal.core.tools;
 
 public class LocalizationLoader
 {
-    public static LocalizationKeySet LoadLocalizationsIntoGodot()
+    public static LocalizationKeySet LoadLocalizationsIntoGodot(string connectionString)
     {
-        var dbPath = ProjectSettings.GlobalizePath("res://data/game_data.db");
-        var connectionString = new SqliteConnectionStringBuilder
-        {
-            DataSource = dbPath,
-            Password = DatabaseSecurityConfig.GetEncryptionKey()
-        }.ToString();
-
         var enTranslation = new Translation { Locale = "en" };
         var keys = new LocalizationKeySet();
         int count = 0;
@@ -27,22 +18,19 @@ public class LocalizationLoader
             using var connection = new SqliteConnection(connectionString);
             connection.Open();
 
-            var cmd = connection.CreateCommand();
+            using var cmd = connection.CreateCommand();
             cmd.CommandText = "SELECT payload_json FROM Localizations;";
 
             using var reader = cmd.ExecuteReader();
             while (reader.Read())
             {
-                string json = reader.GetString(0);
-                using var doc = JsonDocument.Parse(json);
+                using var doc = JsonDocument.Parse(reader.GetString(0));
                 var root = doc.RootElement;
 
-                // Safely extract Key and En from the stored JSON payload
-                string? key = root.TryGetProperty("key", out var kProp) ? kProp.GetString() 
-                            : root.TryGetProperty("Key", out kProp) ? kProp.GetString() : null;
+                //don't even know why I am bothering, probably never gonna add lang support outside of english
+                string? key = root.TryGetProperty("key", out var keyProperty) ? keyProperty.GetString()  : root.TryGetProperty("Key", out keyProperty) ? keyProperty.GetString() : null;
 
-                string? en = root.TryGetProperty("en", out var eProp) ? eProp.GetString() 
-                           : root.TryGetProperty("En", out eProp) ? eProp.GetString() : null;
+                string? en = root.TryGetProperty("en", out var enProperty) ? enProperty.GetString() : root.TryGetProperty("En", out enProperty) ? enProperty.GetString() : null;
 
                 if (string.IsNullOrWhiteSpace(key))
                 {
@@ -58,16 +46,14 @@ public class LocalizationLoader
 
                 bool dataOnly = LocalizationKeySet.IsDataOnlyMarker(en);
 
-                if (!keys.Add(new LocalizationKey(key), dataOnly))
+                if (LocalizationKeySet.IsDataOnlyMarker(en))
                 {
-                    GD.PushWarning($"[LocalizationLoader] Duplicate key '{key}'.");
+                    keys.MarkDataOnly(new LocalizationKey(key));
                     continue;
                 }
 
-                if (dataOnly) continue;
 
-                if (en.TrimStart().StartsWith('['))
-                GD.PushWarning($"[LocalizationLoader] '{key}' starts with '[' but isn't the data-only marker.");
+                if (en.TrimStart().StartsWith('[')) GD.PushWarning($"[LocalizationLoader] '{key}' starts with '[' but isn't the data-only marker.");
 
                 enTranslation.AddMessage(key, en);
                 count++;
@@ -75,14 +61,13 @@ public class LocalizationLoader
         }
         catch (System.Exception ex)
         {
-        GD.PrintErr($"[LocalizationLoader] Failed to load localizations: {ex.Message}");
-        throw;   // see below
+            GD.PrintErr($"[LocalizationLoader] Failed to load localizations: {ex.Message}");
+            throw;
         }
 
-        if (count > 0)
-            TranslationServer.AddTranslation(enTranslation);
+        if (count > 0) TranslationServer.AddTranslation(enTranslation);
 
-        GD.Print($"[LocalizationLoader]: Loaded {count} localizations ({keys} keys total).");
+        GD.Print($"[LocalizationLoader]: Loaded {count} localizations total).");
         return keys;
     }
 }

@@ -15,7 +15,7 @@ public readonly record struct AffixId : IStringId<AffixId>, IComparable<AffixId>
         Value = value;
     }
 
-    // default(AffixId) skips the constructor, so Value can be null
+    //default(AffixId) skips the constructor, so Value can be null
     public bool IsDefault => Value is null;
 
     public override string ToString() => Value ?? string.Empty;

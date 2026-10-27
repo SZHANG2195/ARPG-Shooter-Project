@@ -15,7 +15,7 @@ public readonly record struct ContextId : IStringId<ContextId>, IComparable<Cont
         Value = value;
     }
 
-    // default(ContextId) skips the constructor, so Value can be null
+    //default(ContextId) skips the constructor, so Value can be null
     public bool IsDefault => Value is null;
 
     public override string ToString() => Value ?? string.Empty;

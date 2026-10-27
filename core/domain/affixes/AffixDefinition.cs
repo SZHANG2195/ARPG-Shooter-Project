@@ -15,6 +15,7 @@ public sealed record AffixDefinition
 	public required int CreditValue { get; init; }
 	public required bool IsAlterable { get; init; }
 	public required TagId AffixTypeTagId { get; init; }
+	public ImmutableArray<TagId> ExclusivityTagIds { get; init; } = ImmutableArray<TagId>.Empty;
 	public ImmutableArray<TagId> RequirementTagIds { get; init; } = ImmutableArray<TagId>.Empty;
 	public ImmutableArray<PayloadId> PayloadIds { get; init; } = ImmutableArray<PayloadId>.Empty;
 	public ImmutableArray<TagId> TagIds { get; init; } = ImmutableArray<TagId>.Empty;

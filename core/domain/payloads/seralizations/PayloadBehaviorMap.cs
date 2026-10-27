@@ -19,15 +19,13 @@ public static class PayloadBehaviorMap
     public static Type RecordTypeFor(PayloadBehaviorTypes behavior) => Lookup(behavior).Record;
     public static PayloadBehaviorGroup GroupFor(PayloadBehaviorTypes behavior) => Lookup(behavior).Group;
 
-    private static (Type Record, PayloadBehaviorGroup Group) Lookup(PayloadBehaviorTypes behavior) =>
-        Entries.TryGetValue(behavior, out var entry)
-            ? entry
-            : throw new InvalidOperationException($"No payload record is mapped for behavior '{behavior}'.");
+    private static (Type Record, PayloadBehaviorGroup Group) Lookup(PayloadBehaviorTypes behavior) => Entries.TryGetValue(behavior, out var entry) ? entry : throw new InvalidOperationException($"No payload record is mapped for behavior '{behavior}'.");
 
     public static void AssertComplete()
     {
         foreach (var value in Enum.GetValues<PayloadBehaviorTypes>())
-            if (!Entries.ContainsKey(value))
-                throw new InvalidOperationException($"PayloadBehaviorMap is missing an entry for '{value}'.");
+        {
+            if (!Entries.ContainsKey(value)) throw new InvalidOperationException($"PayloadBehaviorMap is missing an entry for '{value}'.");
+        }
     }
 }

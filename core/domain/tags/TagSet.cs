@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 
 namespace lethal.core.domain.tags;
-
 public sealed class TagSet
 {
     public static readonly TagSet Empty = new(FrozenSet<TagId>.Empty);

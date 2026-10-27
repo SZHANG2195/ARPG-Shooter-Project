@@ -15,7 +15,7 @@ public readonly record struct CharacterId : IStringId<CharacterId>, IComparable<
         Value = value;
     }
 
-    // default(CharacterId) skips the constructor, so Value can be null
+    //default(CharacterId) skips the constructor, so Value can be null
     public bool IsDefault => Value is null;
 
     public override string ToString() => Value ?? string.Empty;

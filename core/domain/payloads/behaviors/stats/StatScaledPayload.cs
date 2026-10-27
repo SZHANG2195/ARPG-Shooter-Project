@@ -1,15 +1,21 @@
-using Godot;
+using System.Collections.Immutable;
+using lethal.core.domain.context;
+using lethal.core.domain.payloads.enums;
+using lethal.core.domain.stats;
+using lethal.core.domain.tags;
 
 namespace lethal.core.domain.payloads;
-public partial class StatScaledPayload : Node
+public sealed record StatScaledPayload : IPayload
 {
-	// Called when the node enters the scene tree for the first time.
-	public override void _Ready()
-	{
-	}
-
-	// Called every frame. 'delta' is the elapsed time since the previous frame.
-	public override void _Process(double delta)
-	{
-	}
+    public required StatStaticType StatStaticType { get; init; }
+    public ImmutableArray<PayloadId> DisabledDefaultIds { get; init; } = ImmutableArray<PayloadId>.Empty;
+    public ContextId? ContextId { get; init; }
+    public StatId? TargetStatId { get; init; }
+    public TagFilter TargetTags { get; init; } = TagFilter.Empty;
+    public ImmutableArray<TagId> ExcludedTags { get; init; } = ImmutableArray<TagId>.Empty;
+    public required string PrimaryScalingFormulaMin { get; init; }
+    public required string PrimaryScalingFormulaMax { get; init; }
+    public string? SecondaryScalingFormulaMin { get; init; }
+    public string? SecondaryScalingFormulaMax { get; init; }
+    public ImmutableArray<ScalingVariable> ScalingVariables { get; init; } = ImmutableArray<ScalingVariable>.Empty;
 }

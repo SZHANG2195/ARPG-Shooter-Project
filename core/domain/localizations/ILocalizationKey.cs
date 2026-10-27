@@ -1,9 +1,6 @@
-using lethal.core.domain.localizations;
-
-namespace lethal.core.domain.localization;
+namespace lethal.core.domain.localizations;
 
 public interface ILocalizationKeys
 {
-    bool Contains(LocalizationKey key);
-    bool IsRenderable(LocalizationKey key);   // false for [DATA ONLY] entries
+    bool IsRenderable(LocalizationKey key);
 }

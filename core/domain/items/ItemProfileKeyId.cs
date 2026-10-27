@@ -15,7 +15,7 @@ public readonly record struct ItemProfileKeyId : IStringId<ItemProfileKeyId>, IC
         Value = value;
     }
 
-    // default(StatId) skips the constructor, so Value can be null
+    //default(StatId) skips the constructor, so Value can be null
     public bool IsDefault => Value is null;
 
     public override string ToString() => Value ?? string.Empty;

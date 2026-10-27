@@ -1,7 +1,9 @@
+using System.Text.Json.Serialization;
 using lethal.core.domain.localizations;
 using lethal.core.domain.payloads.enums;
 
 namespace lethal.core.domain.payloads;
+[JsonConverter(typeof(PayloadDefinitionConverter))]
 public sealed record PayloadDefinition
 {
 	public required PayloadId Id { get; init; }

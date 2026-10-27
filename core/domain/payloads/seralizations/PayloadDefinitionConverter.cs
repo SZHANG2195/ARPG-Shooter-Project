@@ -8,6 +8,8 @@ namespace lethal.core.domain.payloads;
 
 public sealed class PayloadDefinitionConverter : JsonConverter<PayloadDefinition>
 {
+    //payloads are their own json and vary per behavior so we can't serialize normally unless we make a converter here
+    //for rules on each payload
     public override PayloadDefinition Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
         using var doc = JsonDocument.ParseValue(ref reader);
