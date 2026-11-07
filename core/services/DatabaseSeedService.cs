@@ -11,6 +11,8 @@ public class DatabaseSeedService
 {
     private readonly string _connectionString;
 
+    private const string Source = nameof(DatabaseSeedService);
+
     public DatabaseSeedService(string connectionString)
     {
         _connectionString = connectionString;
@@ -42,7 +44,6 @@ public class DatabaseSeedService
                     DELETE FROM {tableName};"; //make sure table is blank, no point in wrestling with upserts and deletes
                 await createTableCmd.ExecuteNonQueryAsync();
 
-
                 using var jsonDoc = System.Text.Json.JsonDocument.Parse(jsonPayload);
                 if (jsonDoc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Array)
                 {
@@ -68,16 +69,16 @@ public class DatabaseSeedService
                     }
                 }
 
-                GD.Print($"[DatabaseSeed]: Successfully cached table '{tableName}' locally.");
+                GD.Print($"[{Source}]: Successfully cached table '{tableName}' locally.");
             }
 
             await transaction.CommitAsync();
-            GD.Print("[DatabaseSeed]: Full local SQLite cache sync completed successfully!");
+            GD.Print($"[{Source}]: Full local SQLite cache sync completed successfully!");
         }
         catch (Exception ex)
         {
             await transaction.RollbackAsync();
-            GD.PrintErr($"[DatabaseSeed] Error during local caching: {ex.Message}");
+            GD.PushError($"[{Source}]: Error during local caching: {ex}");
             throw;
         }
     }

@@ -7,6 +7,7 @@ using lethal.common.registries.items.equipment;
 using lethal.common.registries.payloads;
 using lethal.common.registries.status_effect;
 using lethal.common.registries.tags;
+using lethal.core.config;
 
 namespace lethal.common.registries;
 public sealed class GameData
@@ -23,20 +24,20 @@ public sealed class GameData
     public required AugmentRegistry Augments { get; init; }
     public required CharacterRegistry Characters { get; init; }
 
-    public static GameData Build(GameDefinitions d)
+    public static GameData Build(GameDefinitions d, ErrorConfig errorConfig)
     {
         //order matters here do not touch
-        var tags = TagRegistry.Build(d.Tags);
-        var stats = StatRegistry.Build(d.Stats, tags);
-        var statusEffects = StatusEffectRegistry.Build(d.StatusEffects, tags);
-        var items = ItemRegistry.Build(d.Items, tags);
-        var factions = FactionRegistry.Build(d.Factions);
-        var characters = CharacterRegistry.Build(d.Characters);
-        var itemProfileKeys = ItemProfileKeyRegistry.Build(d.ItemProfileKeys);
-        var equipment = EquipmentRegistry.Build(d.Equipment);
-        var augments = AugmentRegistry.Build(d.Augments);
-        var affixes = AffixRegistry.Build(d.Affixes);
-        var payloads = PayloadRegistry.Build(d.Payloads);
+        var tags = TagRegistry.Build(d.Tags, errorConfig);
+        var stats = StatRegistry.Build(d.Stats, tags, errorConfig);
+        var statusEffects = StatusEffectRegistry.Build(d.StatusEffects, tags, errorConfig);
+        var items = ItemRegistry.Build(d.Items, tags, errorConfig);
+        var factions = FactionRegistry.Build(d.Factions, errorConfig);
+        var characters = CharacterRegistry.Build(d.Characters, errorConfig);
+        var itemProfileKeys = ItemProfileKeyRegistry.Build(d.ItemProfileKeys, errorConfig);
+        var equipment = EquipmentRegistry.Build(d.Equipment, errorConfig);
+        var augments = AugmentRegistry.Build(d.Augments, errorConfig);
+        var affixes = AffixRegistry.Build(d.Affixes, errorConfig);
+        var payloads = PayloadRegistry.Build(d.Payloads, errorConfig);
 
 
         return new GameData

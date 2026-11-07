@@ -10,6 +10,7 @@ public sealed record StatOverridePayload : IPayload
     public ContextId? ContextId { get; init; }
     public StatId? TargetStatId { get; init; }
 	public StatId? SourceStatId { get; init; }
+    public bool TargetWithoutCounterpart { get; init; } = false;
     public required double PrimaryMinValue { get; init; }
     public required double PrimaryMaxValue { get; init; }
     public double? SecondaryMinValue { get; init; }

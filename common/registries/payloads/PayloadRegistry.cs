@@ -3,6 +3,7 @@ using System.Collections.Frozen;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
+using lethal.core.config;
 using lethal.core.domain.payloads;
 using lethal.core.domain.payloads.enums;
 
@@ -11,20 +12,24 @@ public sealed class PayloadRegistry
 {
 	private readonly Registry<PayloadId, PayloadDefinition> _all;
 	private readonly FrozenDictionary<PayloadBehaviorGroup, ImmutableArray<PayloadDefinition>> _byBehaviorType;
+	private readonly ErrorConfig _errorConfig;
 
-	private PayloadRegistry(Registry<PayloadId, PayloadDefinition> all, FrozenDictionary<PayloadBehaviorGroup, ImmutableArray<PayloadDefinition>> byBehaviorType)
+	private const string Source = nameof(PayloadRegistry);
+
+	private PayloadRegistry(Registry<PayloadId, PayloadDefinition> all, FrozenDictionary<PayloadBehaviorGroup, ImmutableArray<PayloadDefinition>> byBehaviorType, ErrorConfig errorConfig)
     {
         _all = all;
         _byBehaviorType = byBehaviorType;
+        _errorConfig = errorConfig;
     }
 
-	public static PayloadRegistry Build(IEnumerable<PayloadDefinition> definitions)
+	public static PayloadRegistry Build(IEnumerable<PayloadDefinition> definitions, ErrorConfig errorConfig)
 	{
-    	var all = Registry<PayloadId, PayloadDefinition>.Build(definitions, d => d.Id, "DefinitionPayloads");
+    	var all = Registry<PayloadId, PayloadDefinition>.Build(definitions, d => d.Id, "DefinitionPayloads", errorConfig);
     	var byBehaviorType = all.All
 			.GroupBy(p => p.PayloadBehaviorGroup)
 			.ToFrozenDictionary(g => g.Key, g => g.ToImmutableArray());
-    	return new PayloadRegistry(all, byBehaviorType);
+    	return new PayloadRegistry(all, byBehaviorType, errorConfig);
 	}
 
 	public bool Contains(PayloadId id) => _all.Contains(id);

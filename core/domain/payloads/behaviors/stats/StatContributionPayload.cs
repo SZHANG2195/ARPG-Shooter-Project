@@ -15,6 +15,7 @@ public sealed record StatContributionPayload : IPayload
 	public StatId? SourceStatId { get; init; }
 	public TagFilter TargetTags { get; init; } = TagFilter.Empty;
     public ImmutableArray<TagId> ExcludedTags { get; init; } = ImmutableArray<TagId>.Empty;
+    public bool TargetWithoutCounterpart { get; init; } = false;
     public required double PrimaryMinValue { get; init; }
     public required double PrimaryMaxValue { get; init; }
     public double? SecondaryMinValue { get; init; }

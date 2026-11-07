@@ -13,6 +13,8 @@ public static class DataSyncService
 {
     private const string MetaTable = "GameMetaData";
 
+    private const string Source = nameof(DataSyncService);
+
 	//do not touch unless adding tables
     private static readonly string[] CacheTables = 
 	[
@@ -37,22 +39,22 @@ public static class DataSyncService
         string? metaJson = await SupabaseSyncService.FetchTableJsonAsync(MetaTable);
         int remoteVersion = ReadRemoteVersion(metaJson);
 
-        GD.Print($"[DataSync]: Attempting version check -> Local: {localVersion}, Remote: {remoteVersion}");
+        GD.Print($"[{Source}]: Attempting version check -> Local: {localVersion}, Remote: {remoteVersion}");
 
         if (remoteVersion < 0)
         {
             if (localVersion == 0) throw new InvalidOperationException("No local data and the remote database is unreachable.");
-            GD.PushWarning("[DataSync]: Remote version unavailable, continuing with local data.");
+            GD.PushWarning($"[{Source}]: Remote version unavailable, continuing with local data.");
             return;
         }
 
         if (localVersion != 0 && remoteVersion <= localVersion)
         {
-            GD.Print("[DataSync]: Local database is up to date. Skipping network sync.");
+            GD.Print($"[{Source}]: Local database is up to date. Skipping network sync.");
             return;
         }
 
-        GD.Print("[DataSync]: New data version or empty local database. Syncing from Supabase...");
+        GD.Print($"[{Source}]: New data version or empty local database. Syncing from Supabase...");
 
         var payloads = new Dictionary<string, string>();
         foreach (var table in CacheTables)
@@ -65,12 +67,12 @@ public static class DataSyncService
         if (missing.Count > 0)
         {
             if (localVersion == 0) throw new InvalidOperationException($"Sync incomplete and no local data. Missing: {string.Join(", ", missing)}");
-            GD.PushWarning($"[DataSync]: Sync incomplete ({string.Join(", ", missing)}), continuing with local data.");
+            GD.PushWarning($"[{Source}]: Sync incomplete ({string.Join(", ", missing)}), continuing with local data.");
             return;
         }
 
         await new DatabaseSeedService(db.ConnectionString).SeedAllFromSupabaseAsync(payloads);
-        GD.Print("[DataSync]: Supabase sync and seed complete.");
+        GD.Print($"[{Source}]: Supabase sync and seed complete.");
     }
 
     private static async Task<int> ReadLocalVersionAsync(DatabasePathConfig db)

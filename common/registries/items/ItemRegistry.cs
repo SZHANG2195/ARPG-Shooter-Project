@@ -1,6 +1,7 @@
 using System.Collections.Frozen;
 using System.Collections.Generic;
 using lethal.common.registries.tags;
+using lethal.core.config;
 using lethal.core.domain.items;
 using lethal.core.domain.tags;
 
@@ -9,11 +10,15 @@ public sealed class ItemRegistry
 {
     private readonly Registry<ItemId, ItemDefinition> _all;
     private readonly FrozenDictionary<ItemId, TagSet> _tagSets;
+    private readonly ErrorConfig _errorConfig;
 
-    private ItemRegistry(Registry<ItemId, ItemDefinition> all, FrozenDictionary<ItemId, TagSet> tagSets)
+    private const string Source = nameof(ItemRegistry);
+
+    private ItemRegistry(Registry<ItemId, ItemDefinition> all, FrozenDictionary<ItemId, TagSet> tagSets, ErrorConfig errorConfig)
     {
         _all = all;
         _tagSets = tagSets;
+        _errorConfig = errorConfig;
     }
 
 
@@ -24,11 +29,11 @@ public sealed class ItemRegistry
     	if (d.RarityTypeTagId is { } rarity) yield return rarity;
 	}
 
-    public static ItemRegistry Build(IEnumerable<ItemDefinition> definitions, TagRegistry tags)
+    public static ItemRegistry Build(IEnumerable<ItemDefinition> definitions, TagRegistry tags, ErrorConfig errorConfig)
 	{
-    	var all = Registry<ItemId, ItemDefinition>.Build(definitions, d => d.Id, "DefinitionItems");
+    	var all = Registry<ItemId, ItemDefinition>.Build(definitions, d => d.Id, "DefinitionItems", errorConfig);
     	var tagSets = all.All.ToFrozenDictionary(d => d.Id, d => tags.Expand(DeclaredTags(d)));
-    	return new ItemRegistry(all, tagSets);
+    	return new ItemRegistry(all, tagSets, errorConfig);
 	}
 
     public bool Contains(ItemId id) => _all.Contains(id);

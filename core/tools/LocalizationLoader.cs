@@ -7,6 +7,8 @@ namespace lethal.core.tools;
 
 public class LocalizationLoader
 {
+    private const string Source = nameof(LocalizationLoader);
+    
     public static LocalizationKeySet LoadLocalizationsIntoGodot(string connectionString)
     {
         var enTranslation = new Translation { Locale = "en" };
@@ -34,13 +36,13 @@ public class LocalizationLoader
 
                 if (string.IsNullOrWhiteSpace(key))
                 {
-                    GD.PushWarning("[LocalizationLoader] Skipped a row with no key.");
+                    GD.PushWarning($"[{Source}]: Skipped a row with no key.");
                     continue;
                 }
                 
                 if (string.IsNullOrWhiteSpace(en))
                 {
-                    GD.PushWarning($"[LocalizationLoader] Key '{key}' has no En text.");
+                    GD.PushWarning($"[{Source}]: Key '{key}' has no En text.");
                     continue;
                 }
 
@@ -53,7 +55,7 @@ public class LocalizationLoader
                 }
 
 
-                if (en.TrimStart().StartsWith('[')) GD.PushWarning($"[LocalizationLoader] '{key}' starts with '[' but isn't the data-only marker.");
+                if (en.TrimStart().StartsWith('[')) GD.PushWarning($"[{Source}]: '{key}' starts with '[' but isn't the data-only marker.");
 
                 enTranslation.AddMessage(key, en);
                 count++;
@@ -61,13 +63,13 @@ public class LocalizationLoader
         }
         catch (System.Exception ex)
         {
-            GD.PrintErr($"[LocalizationLoader] Failed to load localizations: {ex.Message}");
+            GD.PrintErr($"[{Source}]: Failed to load localizations: {ex.Message}");
             throw;
         }
 
         if (count > 0) TranslationServer.AddTranslation(enTranslation);
 
-        GD.Print($"[LocalizationLoader]: Loaded {count} localizations total).");
+        GD.Print($"[{Source}]: Loaded {count} localizations total.");
         return keys;
     }
 }

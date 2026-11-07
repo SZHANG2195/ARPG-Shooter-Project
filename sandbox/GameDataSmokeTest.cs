@@ -2,8 +2,10 @@ using System.Linq;
 using Godot;
 using lethal.common.registries;
 using lethal.common.registries.tags;
+using lethal.core.domain.characters;
 using lethal.core.domain.payloads;
 using lethal.core.domain.payloads.enums;
+using lethal.core.domain.stats;
 using lethal.core.domain.tags;
 
 public static class GameDataSmokeTest
@@ -45,6 +47,10 @@ public static class GameDataSmokeTest
         // code-owned tags and namespaces still exist in the data
         Check(d.Tags.Contains(StatusTags.Affliction) && d.Tags.Contains(StatusTags.Debuff), "status tags exist");
         Check(!d.Tags.Under(TagNamespaces.AffixKeyword).IsEmpty, "affix keyword namespace has tags");
+
+        var child = d.Characters.Get(new CharacterId("player_strength_01"));
+        Check(child.BaseStats.ContainsKey(new StatId("max_health")) && child.BaseStats[new StatId("strength")] == 10,
+            "child keeps its own stats and inherits the template's");
     }
 
     private static void Check(bool ok, string what)

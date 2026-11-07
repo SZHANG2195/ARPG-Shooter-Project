@@ -25,8 +25,10 @@ public sealed class TagSet
     public bool ContainsAll(ImmutableArray<TagId> required)
     {
         if (required.IsDefaultOrEmpty) return true;
-        foreach (var tag in required)
+        foreach (var tag in required) 
+        {
             if (!_tags.Contains(tag)) return false;
+        }
         return true;
     }
 
@@ -34,7 +36,9 @@ public sealed class TagSet
     {
         if (candidates.IsDefaultOrEmpty) return false;
         foreach (var tag in candidates)
+        {
             if (_tags.Contains(tag)) return true;
+        }
         return false;
     }
 

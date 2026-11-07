@@ -6,6 +6,9 @@ using Microsoft.Data.Sqlite;
 namespace lethal.core.tools;
 public static class DefinitionReader
 {
+
+    private const string Source = nameof(DefinitionReader);
+
     public static List<TDef> ReadTable<TDef>(SqliteConnection connection, string table, JsonSerializerOptions options)
     {
         var defs = new List<TDef>();
@@ -21,12 +24,12 @@ public static class DefinitionReader
             string json = reader.GetString(0);
             try
             {
-                defs.Add(JsonSerializer.Deserialize<TDef>(json, options) ?? throw new JsonException("row deserialized to null."));
+                defs.Add(JsonSerializer.Deserialize<TDef>(json, options) ?? throw new JsonException($"[{Source}]: {table} row {row}: Deserialized to null."));
             }
             catch (JsonException ex)
             {
                 string snippet = json.Length <= 120 ? json : json[..120] + "...";
-                throw new InvalidDataException($"{table} row {row}: {ex.Message}\n  {snippet}", ex);
+                throw new InvalidDataException($"[{Source}]: {table} row {row}: {ex.Message}\n  {snippet}", ex);
             }
         }
         return defs;

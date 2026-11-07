@@ -16,7 +16,7 @@ namespace lethal.core.tools;
 
 public static class GameDataLoader
 {
-    public static GameData Load(string connectionString)
+    public static GameData Load(string connectionString, ErrorConfig errorConfig)
     {
         using var connection = new SqliteConnection(connectionString);
         connection.Open();
@@ -38,6 +38,6 @@ public static class GameDataLoader
             Payloads      		= DefinitionReader.ReadTable<PayloadDefinition>(connection, "DefinitionPayloads", options),
         };
 
-        return GameData.Build(defs);
+        return GameData.Build(defs, errorConfig);
     }
 }

@@ -8,6 +8,8 @@ namespace lethal.core.services;
 
 public static class SupabaseSyncService
 {
+    private const string Source = nameof(SupabaseSyncService);
+
     private static readonly System.Net.Http.HttpClient _httpClient = new()
     {
         Timeout = TimeSpan.FromSeconds(5)
@@ -28,16 +30,16 @@ public static class SupabaseSyncService
             if (response.IsSuccessStatusCode)
             {
                 string json = await response.Content.ReadAsStringAsync();
-                GD.Print($"[SupabaseSync]: Successfully fetched {tableName}");
+                GD.Print($"[{Source}]: Successfully fetched {tableName}");
                 return json;
             }
             
             string error = await response.Content.ReadAsStringAsync();
-            GD.PrintErr($"[SupabaseSync] Error fetching {tableName}: HTTP {(int)response.StatusCode} - {error}");
+            GD.PushError($"[{Source}]: Error fetching {tableName}: HTTP {(int)response.StatusCode} - {error}");
         }
         catch (Exception ex)
         {
-            GD.PrintErr($"[SupabaseSync] Network exception for {tableName}: {ex.Message}");
+            GD.PushError($"[{Source}]: Network exception for {tableName}: {ex}");
         }
 
         return null;

@@ -3,6 +3,7 @@ using System.Collections.Frozen;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
+using lethal.core.config;
 using lethal.core.domain.tags;
 
 namespace lethal.common.registries.tags;
@@ -11,17 +12,21 @@ public sealed class TagRegistry
     private readonly Registry<TagId, TagDefinition> _all;
     private readonly FrozenDictionary<TagId, ImmutableArray<TagId>> _ancestors;
     private readonly FrozenDictionary<string, ImmutableArray<TagId>> _byNamespace;
+    private readonly ErrorConfig _errorConfig;
 
-    private TagRegistry(Registry<TagId, TagDefinition> all, FrozenDictionary<TagId, ImmutableArray<TagId>> ancestors, FrozenDictionary<string, ImmutableArray<TagId>> byNamespace)
+    private const string Source = nameof(TagRegistry);
+
+    private TagRegistry(Registry<TagId, TagDefinition> all, FrozenDictionary<TagId, ImmutableArray<TagId>> ancestors, FrozenDictionary<string, ImmutableArray<TagId>> byNamespace, ErrorConfig errorConfig)
     {
         _all = all;
         _ancestors = ancestors;
         _byNamespace = byNamespace;
+        _errorConfig = errorConfig;
     }
 
-    public static TagRegistry Build(IEnumerable<TagDefinition> definitions)
+    public static TagRegistry Build(IEnumerable<TagDefinition> definitions, ErrorConfig errorConfig)
     {
-        var all = Registry<TagId, TagDefinition>.Build(definitions, d => d.Id, "DefinitionTags");
+        var all = Registry<TagId, TagDefinition>.Build(definitions, d => d.Id, "DefinitionTags", errorConfig);
         var ids = definitions.Select(d => d.Id.Value).ToHashSet(StringComparer.Ordinal);
 
         var ancestors = new Dictionary<TagId, ImmutableArray<TagId>>();
@@ -41,7 +46,7 @@ public sealed class TagRegistry
             }
             ancestors[def.Id] = found.ToImmutable();
         }
-        return new TagRegistry(all, ancestors.ToFrozenDictionary(), namespaces.ToFrozenDictionary(kv => kv.Key, kv => kv.Value.ToImmutableArray()));
+        return new TagRegistry(all, ancestors.ToFrozenDictionary(), namespaces.ToFrozenDictionary(kv => kv.Key, kv => kv.Value.ToImmutableArray()), errorConfig);
     }
 
     public bool Contains(TagId id) => _all.Contains(id);

@@ -5,11 +5,7 @@ public class LocalizationManager
 {
 	public static string Localize(string localizationKey)
 	{
-		if (string.IsNullOrWhiteSpace(localizationKey))
-		{
-			return string.Empty;
-		}
-
+		if (string.IsNullOrWhiteSpace(localizationKey))return string.Empty;
 		return TranslationServer.Translate(localizationKey);
 	}
 }
