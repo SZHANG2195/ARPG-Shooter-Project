@@ -8,6 +8,7 @@ using lethal.common.registries.payloads;
 using lethal.common.registries.status_effect;
 using lethal.common.registries.tags;
 using lethal.core.config;
+using lethal.gameplay.stats.components.stat_dependencies;
 
 namespace lethal.common.registries;
 public sealed class GameData
@@ -23,6 +24,7 @@ public sealed class GameData
     public required EquipmentRegistry Equipment { get; init; }
     public required AugmentRegistry Augments { get; init; }
     public required CharacterRegistry Characters { get; init; }
+    public required PayloadFootprintHandler Footprints { get; init; }
 
     public static GameData Build(GameDefinitions d, ErrorConfig errorConfig)
     {
@@ -39,6 +41,8 @@ public sealed class GameData
         var affixes = AffixRegistry.Build(d.Affixes, errorConfig);
         var payloads = PayloadRegistry.Build(d.Payloads, errorConfig);
 
+        var footprints = new PayloadFootprintHandler(payloads, stats);
+        footprints.Warm();
 
         return new GameData
         {
@@ -53,11 +57,12 @@ public sealed class GameData
             Augments = augments,
             Affixes = affixes,
             Payloads = payloads,
+            Footprints = footprints
         };
     }
 
     public string Summary() =>
         $"tags {Tags.Count}, stats {Stats.Count}, statuses {StatusEffects.Count}, factions {Factions.Count}, " +
         $"characters {Characters.Count}, profiles {ItemProfiles.Count}, items {Items.Count}, equipment {Equipment.Count}, " +
-        $"augments {Augments.Count}, affixes {Affixes.Count}, payloads {Payloads.Count}";
+        $"augments {Augments.Count}, affixes {Affixes.Count}, payloads {Payloads.Count}, footprints warmed";
 }

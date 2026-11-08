@@ -64,5 +64,19 @@ public sealed partial class StatsComponent
             }
             return false;
         }
+
+        public bool IsFullyDirty()
+        {
+            if (!Default.IsDirty) return false;
+            if (Lanes != null)
+            {
+                for (int i = 0; i < Lanes.Length; i++)
+                {
+                    if (!Lanes[i].IsDirty) return false;
+                }
+            }
+    
+            return true;
+        }
     }
 }

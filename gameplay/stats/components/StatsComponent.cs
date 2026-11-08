@@ -53,7 +53,7 @@ public sealed partial class StatsComponent
         return new StatsComponent(resolvedBaseStats, statGraph, errorConfig, footprintHandler);
     }
 
-    public bool InstallSource(PayloadSourceHandle sourceHandle, TagSet sourceTags, IEnumerable<StatPayloadInstance> payloadInstances)
+    public bool InstallSource(PayloadSourceHandle sourceHandle, TagSet sourceTags, IEnumerable<StatPayloadInstance> payloadInstances, IEnumerable<StatSourceValue> sourceValues)
     {
         RemoveSource(sourceHandle);
 
@@ -62,9 +62,14 @@ public sealed partial class StatsComponent
 
         foreach (var payloadInstance in payloadInstances)
         {
-            if (Install(sourceEntry, payloadInstance)) continue;
+            if (InstallPayload(sourceEntry, payloadInstance)) continue;
             RemoveSource(sourceHandle);
             return false;
+        }
+
+        foreach (var sourceValue in sourceValues)
+        {
+            InstallSourceValue(sourceEntry, sourceValue);
         }
 
         return true;
@@ -83,7 +88,6 @@ public sealed partial class StatsComponent
             { 
                 var state = _states[stat];
                 state.PrimaryInstances.Remove(payloadInstance);
-                if (footprint.SetsDefault) RefreshBase(_states[stat]);
                 MarkDirty(stat); 
             }
             foreach (var stat in footprint.SecondaryWrites) 
@@ -110,7 +114,7 @@ public sealed partial class StatsComponent
         return true;
     }
 
-    private bool Install(StatSourceEntry sourceEntry, StatPayloadInstance payloadInstance)
+    private bool InstallPayload(StatSourceEntry sourceEntry, StatPayloadInstance payloadInstance)
     {
         var footprint = _footprintHandler.Of(payloadInstance.PayloadId);
         if (!_statGraph.TryAdd(payloadInstance.PayloadId, footprint)) return false;
@@ -121,7 +125,6 @@ public sealed partial class StatsComponent
         { 
             var state = _states[stat];
             state.PrimaryInstances.Add(payloadInstance);
-            if (footprint.SetsDefault) RefreshBase(_states[stat]);
             MarkDirty(stat);
         }
         foreach (var stat in footprint.SecondaryWrites) 
@@ -139,10 +142,20 @@ public sealed partial class StatsComponent
         return true;
     }
 
+    private void InstallSourceValue(StatSourceEntry sourceEntry, StatSourceValue sourceValue)
+    {
+        var state = _states[sourceValue.Stat];
+        state.SourceValues.Add(sourceValue);
+        sourceEntry.PushedKeys.Add((sourceValue.Stat, sourceValue.Lane));
+
+        if (sourceValue.Lane == Lane.Default) MarkDirty(sourceValue.Stat);
+        else MarkLaneDirty(sourceValue.Stat, sourceValue.Lane);
+    }
+
     private void MarkDirty(StatId stat)
     {
         var state = _states[stat];
-        if (state.Default.IsDirty && !state.IsAnyDirty()) return;
+        if (state.IsFullyDirty()) return;
 
         state.MarkAllDirty();
 

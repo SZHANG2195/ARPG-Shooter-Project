@@ -12,6 +12,8 @@ public static class GameDataSmokeTest
 {
     public static void Run(GameData d)
     {
+        GD.Print("[GameDataSmokeTest] Starting game data verification...");
+
         // Tag expansion: real ancestors included, namespace-only prefixes excluded
         var head = new TagId("item.category.equipment.armour.head");
         var set = d.Tags.Expand(new[] { head });
@@ -51,11 +53,13 @@ public static class GameDataSmokeTest
         var child = d.Characters.Get(new CharacterId("player_strength_01"));
         Check(child.BaseStats.ContainsKey(new StatId("max_health")) && child.BaseStats[new StatId("strength")] == 10,
             "child keeps its own stats and inherits the template's");
+
+        GD.Print("[GameDataSmokeTest] All smoke test assertions completed.");
     }
 
     private static void Check(bool ok, string what)
     {
-        if (ok) GD.Print($"[SmokeTest] ok: {what}");
-        else GD.PushError($"[SmokeTest] FAILED: {what}");
+        if (ok) GD.Print($"[GameDataSmokeTest] ok: {what}");
+        else GD.PushError($"[GameDataSmokeTest] FAILED: {what}");
     }
 }

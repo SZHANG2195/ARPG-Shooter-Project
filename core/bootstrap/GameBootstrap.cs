@@ -33,7 +33,10 @@ public partial class GameBootstrap : Node
 
             GD.Print($"[GameData]: {data.Summary()}");
 
-            if (OS.IsDebugBuild()) GameDataSmokeTest.Run(data);
+            if (OS.IsDebugBuild()) {
+                GameDataSmokeTest.Run(data);
+                StatsComponentSmokeTest.Run(data, globalConfig);
+            }
 
             BootstrapReady.TrySetResult(new BootstrapResult(data, keys));
             GD.Print($"[{Source}]: Loading complete.");
