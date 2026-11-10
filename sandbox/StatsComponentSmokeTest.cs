@@ -18,7 +18,7 @@ public static class StatsComponentSmokeTest
 
         // 1. Setup a test character definition and initialize the component
         var characterDef = d.Characters.Get(new CharacterId("player_strength_01"));
-        var statsComponent = StatsComponent.Create(characterDef, d.Stats, errorConfig, d.Footprints);
+        var statsComponent = StatsComponent.Create(characterDef, d.Stats, d.Payloads, errorConfig, d.Footprints);
 
         // Verify base stats initialized properly from character or registry defaults
         // (Assuming you have a way to inspect or query the initial state/default lane base value)
@@ -36,7 +36,7 @@ public static class StatsComponentSmokeTest
                 Stat: new StatId("physical_damage_min"),
                 Value: 25.0,
                 IsBase: true,
-                Lane: Lane.Mainhand
+                Lane: StatStateLane.Mainhand
             )
         };
 

@@ -9,7 +9,7 @@ public sealed partial class StatsComponent
 	private sealed class StatSourceEntry
 	{
     	public readonly List<StatPayloadInstance> Instances = new();
-    	public readonly HashSet<(StatId Stat, Lane Lane)> PushedKeys = new();
+    	public readonly HashSet<(StatId StatId, StatStateLane Lane)> PushedKeys = new();
 		public readonly TagSet Tags;
 
 		public StatSourceEntry(TagSet tags) => Tags = tags;

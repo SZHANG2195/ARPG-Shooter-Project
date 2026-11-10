@@ -3,7 +3,7 @@ using lethal.core.domain.payloads.enums;
 using lethal.core.domain.stats;
 
 namespace lethal.core.domain.payloads;
-public sealed record StatOverridePayload : IPayload
+public sealed record StatOverridePayload : IPayload, IContextualPayload
 {
 	public required StatOverrideType StatOverrideType { get; init; }
     public required EffectScope EffectScope { get; init; }

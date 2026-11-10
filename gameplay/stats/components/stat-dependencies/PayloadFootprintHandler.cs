@@ -64,7 +64,7 @@ public sealed class PayloadFootprintHandler
             	[.. From(footprint.SourceStatId, EdgeKind.Evaluation)]) with 
 				{ 
 					Drains = footprint.StatTranslationType == StatTranslationType.Conversion
-    					? [footprint.SourceStatId ?? throw new InvalidOperationException($"[{Source}]: Payload '{id}' is a conversion but has no source stat.")]
+    					? [footprint.SourceStatId]
     					: ImmutableArray<StatId>.Empty
 				},
 
@@ -80,11 +80,11 @@ public sealed class PayloadFootprintHandler
     	};
 	}
 
-    private ImmutableArray<StatId> Resolve(PayloadId id, StatId? stat, TagFilter tags, ImmutableArray<TagId> excluded)
+    private ImmutableArray<StatId> Resolve(PayloadId id, StatId? statId, TagFilter tags, ImmutableArray<TagId> excluded)
 	{
 		var matched = ImmutableArray.CreateBuilder<StatId>();
 
-		if (stat is {} explicitTarget)
+		if (statId is {} explicitTarget)
 		{
 			if (!_stats.Contains(explicitTarget))  throw new InvalidOperationException($"[{Source}]: Payload '{id}' targets unknown stat '{explicitTarget}'.");
 			matched.Add(explicitTarget);
@@ -96,7 +96,7 @@ public sealed class PayloadFootprintHandler
         	{
             	if (_stats.TagsOf(statEntry.Id).Matches(tags, excluded))
             	{
-                	if (stat is null || statEntry.Id != stat.Value)
+                	if (statId is null || statEntry.Id != statId.Value)
                 	{
                     	matched.Add(statEntry.Id);
                 	}
@@ -110,17 +110,17 @@ public sealed class PayloadFootprintHandler
 
 	private PayloadFootprint Make(
 		PayloadId id, 
-		StatId? stat, 
+		StatId? statId, 
 		TagFilter tags, 
 		ImmutableArray<TagId> excluded,
     	bool withoutCounterpart, 
 		bool hasSecondary, 
-		ImmutableArray<(StatId Stat, EdgeKind Kind)> reads)
+		ImmutableArray<(StatId StatId, EdgeKind Kind)> reads)
 	{
-    	var writes = Resolve(id, stat, tags, excluded);
+    	var writes = Resolve(id, statId, tags, excluded);
     	bool noTags = tags.All.IsDefaultOrEmpty && tags.Any.IsDefaultOrEmpty;
 
-    	if (hasSecondary && (withoutCounterpart || stat is null || !noTags)) throw new InvalidOperationException(
+    	if (hasSecondary && (withoutCounterpart || statId is null || !noTags)) throw new InvalidOperationException(
             $"[{Source}]: Payload '{id}': secondary values need one explicit stat, no tags, and no 'without counterpart' flag.");
 
     	var secondary = ImmutableArray.CreateBuilder<StatId>();
@@ -142,12 +142,6 @@ public sealed class PayloadFootprintHandler
 	public void Warm()
 	{
     	foreach (var definition in _payloads.InGroup(PayloadBehaviorGroup.Stat)) Of(definition.Id);
-	}
-
-	private void HandleError(string message, ErrorConfig errorConfig)
-	{
-    	if (errorConfig.StrictValidation) throw new InvalidOperationException(message);
-    	else errorConfig.OnWarning(message);
 	}
 }
 

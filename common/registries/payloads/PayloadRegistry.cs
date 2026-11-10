@@ -6,12 +6,15 @@ using System.Linq;
 using lethal.core.config;
 using lethal.core.domain.payloads;
 using lethal.core.domain.payloads.enums;
+using lethal.core.domain.tags;
 
 namespace lethal.common.registries.payloads;
 public sealed class PayloadRegistry
 {
 	private readonly Registry<PayloadId, PayloadDefinition> _all;
 	private readonly FrozenDictionary<PayloadBehaviorGroup, ImmutableArray<PayloadDefinition>> _byBehaviorType;
+	private readonly Dictionary<TagId, ImmutableArray<PayloadId>> _defaultsByTag;
+	private readonly ImmutableArray<PayloadId> _universalDefaults;
 	private readonly ErrorConfig _errorConfig;
 
 	private const string Source = nameof(PayloadRegistry);

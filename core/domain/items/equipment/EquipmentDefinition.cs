@@ -9,7 +9,6 @@ public sealed record EquipmentDefinition
 {
 	[JsonPropertyName("ItemId")]
 	public required ItemId Id { get; init; }
-	public required ImmutableArray<TagId> SlotTagIds { get; init; }
 	public ImmutableArray<PayloadId> BaseStatPayloadIds { get; init; } = ImmutableArray<PayloadId>.Empty;
 	public ImmutableArray<AffixId> ImplicitAffixIds { get; init; } = ImmutableArray<AffixId>.Empty;
 	public ImmutableArray<AffixId> RelicAffixIds { get; init; } = ImmutableArray<AffixId>.Empty;

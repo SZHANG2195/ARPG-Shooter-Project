@@ -7,7 +7,7 @@ using lethal.core.domain.tags;
 
 namespace lethal.core.domain.payloads;
 [Obsolete("Archived for historical bookkeeping. Do not use for new implementations.", error: false)]
-public sealed record StatScaledPayload : IPayload
+public sealed record StatScaledPayload : IPayload, IContextualPayload
 {
     public required StatStaticType StatStaticType { get; init; }
     public ImmutableArray<PayloadId> DisabledDefaultIds { get; init; } = ImmutableArray<PayloadId>.Empty;

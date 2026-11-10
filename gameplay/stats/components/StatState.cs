@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using lethal.core.domain.stats;
 using lethal.gameplay.payloads.instances;
 
 namespace lethal.gameplay.stats.components;
@@ -6,6 +7,8 @@ public sealed partial class StatsComponent
 {
 	private sealed class StatState
     {
+        public StatId Id;
+        
         public readonly List<StatPayloadInstance> PrimaryInstances = new();
         public readonly List<StatPayloadInstance> SecondaryInstances = new();
         public readonly List<StatPayloadInstance> DrainInstances = new();
@@ -16,12 +19,12 @@ public sealed partial class StatsComponent
         public StatLaneResult Default;
         public StatLaneResult[]? Lanes;
 
-        public StatState(double originalBaseValue)
+        public StatState(StatId id, double originalBaseValue)
         {
+            Id = id;
             OriginalBaseValue = originalBaseValue;
             Default = new StatLaneResult
             {
-                BaseValue = originalBaseValue,
                 Result = StatResult.Seed(originalBaseValue),
                 IsDirty = true
             };
@@ -39,9 +42,9 @@ public sealed partial class StatsComponent
             }
         }
 
-        public void MarkLaneDirty(Lane lane)
+        public void MarkLaneDirty(StatStateLane lane)
         {
-            if (lane == Lane.Default)
+            if (lane == StatStateLane.Default)
             {
                 Default.IsDirty = true;
                 return;

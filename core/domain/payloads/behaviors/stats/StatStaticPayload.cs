@@ -5,7 +5,7 @@ using lethal.core.domain.stats;
 using lethal.core.domain.tags;
 
 namespace lethal.core.domain.payloads;
-public sealed record StatStaticPayload : IPayload
+public sealed record StatStaticPayload : IPayload, IContextualPayload
 {
 	public required StatStaticType StatStaticType { get; init; }
     public required EffectScope EffectScope { get; init; }

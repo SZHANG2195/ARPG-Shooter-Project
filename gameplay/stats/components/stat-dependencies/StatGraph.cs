@@ -27,7 +27,7 @@ public sealed class StatGraph
             {
                 if (kind == EdgeKind.Evaluation && WouldCreateCycle(via, read, write))
                 {
-                    var message = $"[{Source}]: Payload '{via}' creates a stat dependency cycle: {read} -> {write}. Addition rejected.";
+                    var message = $"Payload '{via}' creates a stat dependency cycle: {read} -> {write}. Addition rejected.";
                     _errorConfig.ReportError(Source, message);
                 
 
@@ -71,10 +71,10 @@ public sealed class StatGraph
         }
     }
 
-    public void CollectDependents(StatId stat, HashSet<StatId> collected)
+    public void CollectDependents(StatId statId, HashSet<StatId> collected)
     {
         var stack = new Stack<StatId>();
-        stack.Push(stat);
+        stack.Push(statId);
 
         //simple dfs traversal, we prevent infinite loops by never adding an already added edge
         //such a case would be against design anyways

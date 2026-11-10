@@ -1,5 +1,5 @@
 namespace lethal.gameplay.stats.components;
-public enum Lane
+public enum StatStateLane
 {
 	Default,
 	Mainhand,
