@@ -346,6 +346,8 @@ public sealed partial class StatsComponent
             var payloadData = _payloadRegistry.Get(payloadInstance.PayloadId).PayloadData;
             if (!PassesContextCheck(payloadData)) continue;
 
+            if (_disabledDefaultIdCounts.ContainsKey(payloadInstance.PayloadId)) continue;
+
             if (footprint.SetsDefault)
             {
                 if (hasDefaultOverride)
@@ -364,6 +366,8 @@ public sealed partial class StatsComponent
 
             var payloadData = _payloadRegistry.Get(payloadInstance.PayloadId).PayloadData;
             if (!PassesContextCheck(payloadData)) continue;
+
+            if (_disabledDefaultIdCounts.ContainsKey(payloadInstance.PayloadId)) continue;
 
             if (footprint.SetsDefault && payloadInstance.Secondary is { } secondaryOverride)
             {
@@ -424,6 +428,8 @@ public sealed partial class StatsComponent
             var payloadData = _payloadRegistry.Get(payloadInstance.PayloadId).PayloadData;
             if (!PassesContextCheck(payloadData)) continue;
 
+            if (_disabledDefaultIdCounts.ContainsKey(payloadInstance.PayloadId)) continue;
+
             accumulatedFlatValue += payloadData switch
             {
                 StatStaticPayload staticPayload when staticPayload.StatStaticType == StatStaticType.Flat => 
@@ -443,6 +449,8 @@ public sealed partial class StatsComponent
             {
                 var footprint = _footprintHandler.Of(payloadInstance.PayloadId);
                 if (footprint.SetsDefault) continue;
+
+                if (_disabledDefaultIdCounts.ContainsKey(payloadInstance.PayloadId)) continue;
 
                 var payloadData = _payloadRegistry.Get(payloadInstance.PayloadId).PayloadData;
                 if (!PassesContextCheck(payloadData)) continue;
@@ -473,9 +481,10 @@ public sealed partial class StatsComponent
         {
             var footprint = _footprintHandler.Of(payloadInstance.PayloadId);
             if (footprint.SetsDefault) continue;
+
+            if (_disabledDefaultIdCounts.ContainsKey(payloadInstance.PayloadId)) continue;
             
             var payloadData = _payloadRegistry.Get(payloadInstance.PayloadId).PayloadData;
-
             if (!PassesContextCheck(payloadData)) continue;
 
             if (payloadData is StatOverridePayload overridePayload && overridePayload.StatOverrideType == StatOverrideType.FlatOverride)
@@ -502,6 +511,8 @@ public sealed partial class StatsComponent
 
                 var payloadData = _payloadRegistry.Get(payloadInstance.PayloadId).PayloadData;
                 if (!PassesContextCheck(payloadData)) continue;
+
+                if (_disabledDefaultIdCounts.ContainsKey(payloadInstance.PayloadId)) continue;
 
                 if (payloadData is StatOverridePayload overridePayload && overridePayload.StatOverrideType == StatOverrideType.FlatOverride)
                 {
@@ -534,8 +545,9 @@ public sealed partial class StatsComponent
             if (footprint.SetsDefault) continue;
             
             var payloadData = _payloadRegistry.Get(payloadInstance.PayloadId).PayloadData;
-
             if (!PassesContextCheck(payloadData)) continue;
+
+            if (_disabledDefaultIdCounts.ContainsKey(payloadInstance.PayloadId)) continue;
 
             accumulatedDerivedFlatValue += payloadData switch
             {
@@ -562,8 +574,9 @@ public sealed partial class StatsComponent
             if (footprint.SetsDefault) continue;
             
             var payloadData = _payloadRegistry.Get(payloadInstance.PayloadId).PayloadData;
-
             if (!PassesContextCheck(payloadData)) continue;
+
+            if (_disabledDefaultIdCounts.ContainsKey(payloadInstance.PayloadId)) continue;
 
             if (payloadData is StatTranslationPayload translationPayload &&  translationPayload.StatTranslationType == StatTranslationType.Conversion)
                 accumulatedConversionFlatValue += ResolveDerivedValue(translationPayload, payloadInstance);
@@ -575,8 +588,9 @@ public sealed partial class StatsComponent
             if (footprint.SetsDefault) continue;
             
             var payloadData = _payloadRegistry.Get(payloadInstance.PayloadId).PayloadData;
-
             if (!PassesContextCheck(payloadData)) continue;
+
+            if (_disabledDefaultIdCounts.ContainsKey(payloadInstance.PayloadId)) continue;
 
             if (payloadData is StatTranslationPayload translationPayload &&  translationPayload.StatTranslationType == StatTranslationType.Conversion)
                 accumulatedConversionFlatValue -= currentStatResult.DerivedPreConversionValue * payloadInstance.Primary;
@@ -596,8 +610,9 @@ public sealed partial class StatsComponent
             if (footprint.SetsDefault) continue;
             
             var payloadData = _payloadRegistry.Get(payloadInstance.PayloadId).PayloadData;
-
             if (!PassesContextCheck(payloadData)) continue;
+
+            if (_disabledDefaultIdCounts.ContainsKey(payloadInstance.PayloadId)) continue;
 
             accumulatedAdditiveValue += payloadData switch
             {
@@ -638,8 +653,9 @@ public sealed partial class StatsComponent
                 if (footprint.SetsDefault) continue;
             
                 var payloadData = _payloadRegistry.Get(payloadInstance.PayloadId).PayloadData;
-
                 if (!PassesContextCheck(payloadData)) continue;
+
+                if (_disabledDefaultIdCounts.ContainsKey(payloadInstance.PayloadId)) continue;
 
                 accumulatedAdditiveValue += payloadData switch
                 {
@@ -686,8 +702,9 @@ public sealed partial class StatsComponent
             if (footprint.SetsDefault) continue;
             
             var payloadData = _payloadRegistry.Get(payloadInstance.PayloadId).PayloadData;
-
             if (!PassesContextCheck(payloadData)) continue;
+
+            if (_disabledDefaultIdCounts.ContainsKey(payloadInstance.PayloadId)) continue;
 
             if (payloadData is StatTranslationPayload translationPayload &&  translationPayload.StatTranslationType == StatTranslationType.DerivationPostMultipliers)
                 accumulatedDerivedPostMultiplierValue += ResolveDerivedValue(translationPayload, payloadInstance);
@@ -706,8 +723,9 @@ public sealed partial class StatsComponent
             if (footprint.SetsDefault) continue;
             
             var payloadData = _payloadRegistry.Get(payloadInstance.PayloadId).PayloadData;
-
             if (!PassesContextCheck(payloadData)) continue;
+
+            if (_disabledDefaultIdCounts.ContainsKey(payloadInstance.PayloadId)) continue;
 
             if (payloadData is StatTranslationPayload translationPayload &&  translationPayload.StatTranslationType == StatTranslationType.DerivationLast)
                 accumulatedDerivedFinalValue += ResolveDerivedValue(translationPayload, payloadInstance);
@@ -727,8 +745,9 @@ public sealed partial class StatsComponent
             if (footprint.SetsDefault) continue;
             
             var payloadData = _payloadRegistry.Get(payloadInstance.PayloadId).PayloadData;
-
             if (!PassesContextCheck(payloadData)) continue;
+
+            if (_disabledDefaultIdCounts.ContainsKey(payloadInstance.PayloadId)) continue;
 
             if (payloadData is StatOverridePayload overridePayload && overridePayload.StatOverrideType == StatOverrideType.FinalOverride)
             {
@@ -754,6 +773,8 @@ public sealed partial class StatsComponent
 
                 var payloadData = _payloadRegistry.Get(payloadInstance.PayloadId).PayloadData;
                 if (!PassesContextCheck(payloadData)) continue;
+
+                if (_disabledDefaultIdCounts.ContainsKey(payloadInstance.PayloadId)) continue;
 
                 if (payloadData is StatOverridePayload overridePayload && overridePayload.StatOverrideType == StatOverrideType.FinalOverride)
                 {
