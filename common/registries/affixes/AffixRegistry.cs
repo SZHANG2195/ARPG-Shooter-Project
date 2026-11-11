@@ -22,12 +22,12 @@ public sealed class AffixRegistry
         _errorConfig = errorConfig;
     }
 
-    public static AffixRegistry Build(IEnumerable<AffixDefinition> defs, ErrorConfig errorConfig)
+    public static AffixRegistry Build(IEnumerable<AffixDefinition> definitions, ErrorConfig errorConfig)
     {
-        var all = Registry<AffixId, AffixDefinition>.Build(defs, d => d.Id, "DefinitionAffixes", errorConfig);
+        var all = Registry<AffixId, AffixDefinition>.Build(definitions, definition => definition.Id, "DefinitionAffixes", errorConfig);
         var byType = all.All
-            .GroupBy(a => a.AffixTypeTagId)
-            .ToFrozenDictionary(g => g.Key, g => g.ToImmutableArray());
+            .GroupBy(affix => affix.AffixTypeTagId)
+            .ToFrozenDictionary(affixGroup => affixGroup.Key, affixGroup => affixGroup.ToImmutableArray());
         return new AffixRegistry(all, byType, errorConfig);
     }
 

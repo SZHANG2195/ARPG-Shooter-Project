@@ -14,7 +14,7 @@ public sealed class FactionRegistry
 
     public static FactionRegistry Build(IEnumerable<FactionDefinition> definitions, ErrorConfig errorConfig)
     {
-        var all = Registry<TagId, FactionDefinition>.Build(definitions, d => d.Id, "DefinitionFactions", errorConfig);
+        var all = Registry<TagId, FactionDefinition>.Build(definitions, definition => definition.Id, "DefinitionFactions", errorConfig);
         return new FactionRegistry(all);
     }
 

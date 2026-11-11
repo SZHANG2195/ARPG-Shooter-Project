@@ -25,41 +25,37 @@ public sealed class CharacterRegistry
 
     public static CharacterRegistry Build(IEnumerable<CharacterDefinition> definitions, ErrorConfig errorConfig)
     {
-        var raw = Registry<CharacterId, CharacterDefinition>.Build(definitions.ToList(), d => d.Id, "DefinitionCharacters", errorConfig);
+        var raw = Registry<CharacterId, CharacterDefinition>.Build(definitions.ToList(), definition => definition.Id, "DefinitionCharacters", errorConfig);
 
-        var resolved = new Dictionary<CharacterId, CharacterDefinition>();
-        var resolving = new HashSet<CharacterId>();
+        var resolvedCharacters = new Dictionary<CharacterId, CharacterDefinition>();
+        var charactersCurrentlyResolving = new HashSet<CharacterId>();
 
-        CharacterDefinition Resolve(CharacterDefinition c)
+        CharacterDefinition Resolve(CharacterDefinition character)
         {
-            if (resolved.TryGetValue(c.Id, out var done)) return done;
-            if (c.TemplateId is not { } templateId) return resolved[c.Id] = c;
+            if (resolvedCharacters.TryGetValue(character.Id, out var done)) return done;
+            if (character.TemplateId is not { } templateId) return resolvedCharacters[character.Id] = character;
 
-            if (!resolving.Add(c.Id)) throw new InvalidOperationException($"CharacterRegistry]: Character template cycle involving '{c.Id}'.");
-            if (!raw.TryGet(templateId, out var template))
-            {
-                var message = $"CharacterRegistry]: Character '{c.Id}' uses unknown template '{templateId}'.";
-                errorConfig.ReportError(Source, message);
-            }
+            if (!charactersCurrentlyResolving.Add(character.Id)) throw new InvalidOperationException($"[{Source}]: Character template cycle involving '{character.Id}'.");
+            if (!raw.TryGet(templateId, out var template)) throw new InvalidOperationException($"[{Source}]: Character '{character.Id}' uses unknown template '{templateId}'.");
 
             var parent = Resolve(template);
-            resolving.Remove(c.Id);
+            charactersCurrentlyResolving.Remove(character.Id);
 
-            return resolved[c.Id] = c with
+            return resolvedCharacters[character.Id] = character with
             {
-                BaseStats = parent.BaseStats.SetItems(c.BaseStats),
-                StartingResourceIds = c.StartingResourceIds.IsEmpty
+                BaseStats = parent.BaseStats.SetItems(character.BaseStats),
+                StartingResourceIds = character.StartingResourceIds.IsEmpty
                     ? parent.StartingResourceIds
-                    : c.StartingResourceIds,
+                    : character.StartingResourceIds,
             };
         }
 
-        var all = Registry<CharacterId, CharacterDefinition>.Build(raw.All.Select(Resolve), d => d.Id, "DefinitionCharacters", errorConfig);
+        var all = Registry<CharacterId, CharacterDefinition>.Build(raw.All.Select(Resolve), definition => definition.Id, "DefinitionCharacters", errorConfig);
 
         var byFaction = all.All
-            .SelectMany(c => c.FactionTagIds.Distinct().Select(f => (Faction: f, Character: c)))
-            .GroupBy(x => x.Faction, x => x.Character)
-            .ToFrozenDictionary(g => g.Key, g => g.ToImmutableArray());
+            .SelectMany(character => character.FactionTagIds.Distinct().Select(f => (Faction: f, Character: character)))
+            .GroupBy(factionPair => factionPair.Faction, x => x.Character)
+            .ToFrozenDictionary(factionGroup => factionGroup.Key, factionGroup => factionGroup.ToImmutableArray());
 
         return new CharacterRegistry(all, byFaction, errorConfig);
     }

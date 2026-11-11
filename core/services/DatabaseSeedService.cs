@@ -27,27 +27,27 @@ public class DatabaseSeedService
         await using var transaction = connection.BeginTransaction();
         try
         {
-            foreach (var kvp in tableJsonPayloads)
+            foreach (var keyValuePair in tableJsonPayloads)
             {
-                string tableName = kvp.Key;
-                string jsonPayload = kvp.Value;
+                string tableName = keyValuePair.Key;
+                string jsonPayload = keyValuePair.Value;
 
                 if (string.IsNullOrWhiteSpace(jsonPayload)) continue;
 
                 //table might not exist, i.e. deleted for some reason
-                var createTableCmd = connection.CreateCommand();
-                createTableCmd.CommandText = $@"
+                var createTableCommand = connection.CreateCommand();
+                createTableCommand.CommandText = $@"
                     CREATE TABLE IF NOT EXISTS {tableName} (
                         id TEXT PRIMARY KEY,
                         payload_json TEXT NOT NULL
                     );
                     DELETE FROM {tableName};"; //make sure table is blank, no point in wrestling with upserts and deletes
-                await createTableCmd.ExecuteNonQueryAsync();
+                await createTableCommand.ExecuteNonQueryAsync();
 
-                using var jsonDoc = System.Text.Json.JsonDocument.Parse(jsonPayload);
-                if (jsonDoc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Array)
+                using var jsonDocument = System.Text.Json.JsonDocument.Parse(jsonPayload);
+                if (jsonDocument.RootElement.ValueKind == System.Text.Json.JsonValueKind.Array)
                 {
-                    foreach (var element in jsonDoc.RootElement.EnumerateArray())
+                    foreach (var element in jsonDocument.RootElement.EnumerateArray())
                     {
                         var firstPropVal = element.EnumerateObject().FirstOrDefault().Value;
                         string id = firstPropVal.ValueKind switch
@@ -57,15 +57,15 @@ public class DatabaseSeedService
                             _ => firstPropVal.ToString() ?? Guid.NewGuid().ToString()
                         };
 
-                        var insertCmd = connection.CreateCommand();
-                        insertCmd.CommandText = $@"
+                        var insertCommand = connection.CreateCommand();
+                        insertCommand.CommandText = $@"
                             INSERT OR REPLACE INTO {tableName} (id, payload_json) 
                             VALUES ($id, $payload);";
                         
-                        insertCmd.Parameters.AddWithValue("$id", id ?? Guid.NewGuid().ToString());
-                        insertCmd.Parameters.AddWithValue("$payload", element.GetRawText());
+                        insertCommand.Parameters.AddWithValue("$id", id ?? Guid.NewGuid().ToString());
+                        insertCommand.Parameters.AddWithValue("$payload", element.GetRawText());
                         
-                        await insertCmd.ExecuteNonQueryAsync();
+                        await insertCommand.ExecuteNonQueryAsync();
                     }
                 }
 
@@ -75,10 +75,10 @@ public class DatabaseSeedService
             await transaction.CommitAsync();
             GD.Print($"[{Source}]: Full local SQLite cache sync completed successfully!");
         }
-        catch (Exception ex)
+        catch (Exception exception)
         {
             await transaction.RollbackAsync();
-            GD.PushError($"[{Source}]: Error during local caching: {ex}");
+            GD.PushError($"[{Source}]: Error during local caching: {exception}");
             throw;
         }
     }

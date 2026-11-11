@@ -22,17 +22,17 @@ public sealed class ItemRegistry
     }
 
 
-	private static IEnumerable<TagId> DeclaredTags(ItemDefinition d)
+	private static IEnumerable<TagId> DeclaredTags(ItemDefinition definition)
 	{
-    	yield return d.CategoryTagId;
-    	if (d.AttributeAffinityTagId is { } affinity) yield return affinity;
-    	if (d.RarityTypeTagId is { } rarity) yield return rarity;
+    	yield return definition.CategoryTagId;
+    	if (definition.AttributeAffinityTagId is { } affinity) yield return affinity;
+    	if (definition.RarityTypeTagId is { } rarity) yield return rarity;
 	}
 
     public static ItemRegistry Build(IEnumerable<ItemDefinition> definitions, TagRegistry tags, ErrorConfig errorConfig)
 	{
-    	var all = Registry<ItemId, ItemDefinition>.Build(definitions, d => d.Id, "DefinitionItems", errorConfig);
-    	var tagSets = all.All.ToFrozenDictionary(d => d.Id, d => tags.Expand(DeclaredTags(d)));
+    	var all = Registry<ItemId, ItemDefinition>.Build(definitions, definition => definition.Id, "DefinitionItems", errorConfig);
+    	var tagSets = all.All.ToFrozenDictionary(item => item.Id, item => tags.Expand(DeclaredTags(item)));
     	return new ItemRegistry(all, tagSets, errorConfig);
 	}
 

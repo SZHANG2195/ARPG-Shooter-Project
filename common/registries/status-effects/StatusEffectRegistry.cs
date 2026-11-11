@@ -24,8 +24,8 @@ public sealed class StatusEffectRegistry
 
     public static StatusEffectRegistry Build(IEnumerable<StatusEffectDefinition> definitions, TagRegistry tags, ErrorConfig errorConfig)
     {
-        var all = Registry<StatusEffectId, StatusEffectDefinition>.Build(definitions, d => d.Id, "DefinitionStatusEffects", errorConfig);
-    	var tagSets = all.All.ToFrozenDictionary(d => d.Id, d => tags.Expand(d.TagIds));
+        var all = Registry<StatusEffectId, StatusEffectDefinition>.Build(definitions, definition => definition.Id, "DefinitionStatusEffects", errorConfig);
+    	var tagSets = all.All.ToFrozenDictionary(statusEffect => statusEffect.Id, statusEffect => tags.Expand(statusEffect.TagIds));
         return new StatusEffectRegistry(all, tagSets, errorConfig);
     }
 

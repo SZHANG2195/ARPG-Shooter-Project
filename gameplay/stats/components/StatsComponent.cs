@@ -18,6 +18,7 @@ public sealed partial class StatsComponent
 {
     private readonly Dictionary<PayloadSourceHandle, StatSourceEntry> _activeSources = new();
     private readonly Dictionary<StatId, StatState> _states = new();
+    private readonly Dictionary<PayloadId, int> _disabledDefaultIdCounts = new();
     private readonly StatGraph _statGraph;
     private readonly ErrorConfig _errorConfig;
     private readonly PayloadFootprintHandler _footprintHandler;
@@ -26,7 +27,12 @@ public sealed partial class StatsComponent
 
     private const string Source = nameof(StatsComponent);
 
-    private StatsComponent(Dictionary<StatId, double> resolvedBaseStats, StatGraph statGraph, ErrorConfig errorConfig, PayloadFootprintHandler footprintHandler, PayloadRegistry payloadRegistry)
+    private StatsComponent(
+        Dictionary<StatId, double> resolvedBaseStats, 
+        StatGraph statGraph, 
+        ErrorConfig errorConfig, 
+        PayloadFootprintHandler footprintHandler, 
+        PayloadRegistry payloadRegistry)
     {
         _statGraph = statGraph;
         _errorConfig = errorConfig;
@@ -63,6 +69,8 @@ public sealed partial class StatsComponent
 
     public bool InstallSource(PayloadSourceHandle sourceHandle, TagSet sourceTags, IEnumerable<StatPayloadInstance> payloadInstances, IEnumerable<StatSourceValue> sourceValues)
     {
+        foreach (var instance in payloadInstances) _footprintHandler.Of(instance.PayloadId);
+
         RemoveSource(sourceHandle);
 
         var sourceEntry = new StatSourceEntry(sourceTags);
@@ -73,6 +81,37 @@ public sealed partial class StatsComponent
             if (InstallPayload(sourceEntry, payloadInstance)) continue;
             RemoveSource(sourceHandle);
             return false;
+        }
+
+        foreach (var payloadInstance in payloadInstances)
+        {
+            var definition = _payloadRegistry.Get(payloadInstance.PayloadId);
+            if (definition.PayloadData is IDefaultDisablingPayload disablingPayload && !disablingPayload.DisabledDefaultIds.IsDefaultOrEmpty)
+            {
+                foreach (var disabledId in disablingPayload.DisabledDefaultIds)
+                {
+                    if (!_disabledDefaultIdCounts.TryGetValue(disabledId, out var count)) count = 0;
+
+                     _disabledDefaultIdCounts[disabledId] = count + 1;
+
+                     if (count == 0)
+                    {
+                        var newlyDisabledFootprint = _footprintHandler.Of(disabledId);
+                        foreach (var stat in newlyDisabledFootprint.PrimaryWrites)
+                        {
+                            MarkDirty(stat);
+                        }
+                        foreach (var stat in newlyDisabledFootprint.SecondaryWrites)
+                        {
+                            MarkDirty(stat);
+                        }
+                        foreach (var stat in newlyDisabledFootprint.Drains)
+                        {
+                            MarkDirty(stat);
+                        }
+                    }
+                }
+            }
         }
 
         foreach (var sourceValue in sourceValues)
@@ -91,6 +130,36 @@ public sealed partial class StatsComponent
         {
             var footprint = _footprintHandler.Of(payloadInstance.PayloadId);
             _statGraph.Remove(payloadInstance.PayloadId, footprint);
+
+            var definition = _payloadRegistry.Get(payloadInstance.PayloadId);
+            if (definition.PayloadData is IDefaultDisablingPayload disablingPayload && !disablingPayload.DisabledDefaultIds.IsDefaultOrEmpty)
+            {
+                foreach (var disabledId in disablingPayload.DisabledDefaultIds)
+                {
+                    if (!_disabledDefaultIdCounts.TryGetValue(disabledId, out var count))
+                    {
+                        if (count <= 1) 
+                        {
+                            _disabledDefaultIdCounts.Remove(disabledId);
+
+                            var reenabledFootprint = _footprintHandler.Of(disabledId);
+                            foreach (var stat in reenabledFootprint.PrimaryWrites)
+                            {
+                                MarkDirty(stat);
+                            }
+                            foreach (var stat in reenabledFootprint.SecondaryWrites)
+                            {
+                                MarkDirty(stat);
+                            }
+                            foreach (var stat in reenabledFootprint.Drains)
+                            {
+                                MarkDirty(stat);
+                            }
+                        }
+                        else _disabledDefaultIdCounts[disabledId] = count - 1;
+                    }
+                }
+            }
 
             foreach (var stat in footprint.PrimaryWrites)   
             { 
@@ -196,7 +265,7 @@ public sealed partial class StatsComponent
         ref var laneResult = ref GetLaneResult(state, lane);
         if (laneResult.IsDirty) 
         {
-            EvaluateStat(statId, lane, state, ref laneResult);
+            EvaluateStat(lane, state, ref laneResult);
             laneResult.IsDirty = false;
         }
 
@@ -225,7 +294,6 @@ public sealed partial class StatsComponent
             var laneBResult = GetStatResult(sourceStatId, StatStateLane.Offhand);
             
             return (laneAResult, laneBResult);
-
         } 
         else
         {
@@ -234,7 +302,7 @@ public sealed partial class StatsComponent
         }
     }
 
-    private StatResult EvaluateStat(StatId statId, StatStateLane lane, StatState state, ref StatLaneResult laneResult)
+    private StatResult EvaluateStat(StatStateLane lane, StatState state, ref StatLaneResult laneResult)
     {
         double baseValue = ResolveBaseValue(state, lane);
         laneResult.Result = StatResult.Seed(baseValue);
@@ -248,7 +316,7 @@ public sealed partial class StatsComponent
         double accumulatedDerivedFlatValue = ResolveDerivedFlatValue(state);
         laneResult.Result = laneResult.Result.ApplyDerivedPreConversionValue(accumulatedDerivedFlatValue);
 
-        double accumulatedConversionFlatValue = ResolveConversionFlatValue(state);
+        double accumulatedConversionFlatValue = ResolveConversionFlatValue(state, laneResult.Result);
         laneResult.Result = laneResult.Result.ApplyConvertedValue(accumulatedConversionFlatValue);
 
         var (accumulatedAdditiveValue, accumulatedMultiplicativeValue) = ResolveMultiplierValue(state);
@@ -263,7 +331,7 @@ public sealed partial class StatsComponent
         double? finalOverrideValue = ResolveFinalOverrideValue(state, lane);
         if (finalOverrideValue is { } resolvedFinalOverrideValue) laneResult.Result = laneResult.Result.ApplyFinalOverrideValue(resolvedFinalOverrideValue);
 
-        return new StatResult(0, 0, 0, 0, 0 , 0, 0);
+        return laneResult.Result;
     }
 
     private double ResolveBaseValue(StatState state, StatStateLane lane)
@@ -420,7 +488,7 @@ public sealed partial class StatsComponent
                 }
 
                 double resolvedValue = overridePayload.SourceStatId is { } sourceStatId
-                    ? ResolveOverrideValue(overridePayload, sourceStatId, lane)
+                    ? ResolveOverrideValue(overridePayload, sourceStatId) * payloadInstance.Primary
                     : payloadInstance.Primary;
                 flatOverrideValue = resolvedValue;
                 hasFlatOverride = true; 
@@ -445,7 +513,7 @@ public sealed partial class StatsComponent
                     }
 
                     double resolvedValue = overridePayload.SourceStatId is { } sourceStatId
-                        ? ResolveOverrideValue(overridePayload, sourceStatId, lane)
+                        ? ResolveOverrideValue(overridePayload, sourceStatId) * secondaryValue
                         : secondaryValue;
                     flatOverrideValue = resolvedValue;
                     hasFlatOverride = true; 
@@ -484,7 +552,7 @@ public sealed partial class StatsComponent
         return accumulatedDerivedFlatValue;
     }
 
-    private double ResolveConversionFlatValue(StatState state)
+    private double ResolveConversionFlatValue(StatState state, StatResult currentStatResult)
     {
         double accumulatedConversionFlatValue = 0.0;
 
@@ -511,7 +579,7 @@ public sealed partial class StatsComponent
             if (!PassesContextCheck(payloadData)) continue;
 
             if (payloadData is StatTranslationPayload translationPayload &&  translationPayload.StatTranslationType == StatTranslationType.Conversion)
-                accumulatedConversionFlatValue -= ResolveDerivedValue(translationPayload, payloadInstance);
+                accumulatedConversionFlatValue -= currentStatResult.DerivedPreConversionValue * payloadInstance.Primary;
         }
 
         return accumulatedConversionFlatValue;
@@ -588,7 +656,7 @@ public sealed partial class StatsComponent
                     _ => 0.0
                 };
 
-                accumulatedMultiplicativeValue += payloadData switch
+                accumulatedMultiplicativeValue *= payloadData switch
                 {
                     StatStaticPayload staticPayload when staticPayload.StatStaticType == StatStaticType.PercentMultiplicative =>
                         secondaryValue,
@@ -672,7 +740,7 @@ public sealed partial class StatsComponent
                 }
 
                 double resolvedValue = overridePayload.SourceStatId is { } sourceStatId
-                    ? ResolveOverrideValue(overridePayload, sourceStatId, lane)
+                    ? ResolveOverrideValue(overridePayload, sourceStatId) * payloadInstance.Primary
                     : payloadInstance.Primary;
                 finalOverrideValue = resolvedValue;
                 hasFinalOverride = true; 
@@ -697,7 +765,7 @@ public sealed partial class StatsComponent
                     }
 
                     double resolvedValue = overridePayload.SourceStatId is { } sourceStatId
-                        ? ResolveOverrideValue(overridePayload, sourceStatId, lane)
+                        ? ResolveOverrideValue(overridePayload, sourceStatId) * secondaryValue
                         : secondaryValue;
                     finalOverrideValue = resolvedValue;
                     hasFinalOverride = true; 
@@ -708,29 +776,23 @@ public sealed partial class StatsComponent
         return finalOverrideValue;
     }
 
-    private double ResolveOverrideValue(StatOverridePayload overridePayload, StatId sourceStatId, StatStateLane lane)
+    private double ResolveOverrideValue(StatOverridePayload overridePayload, StatId sourceStatId)
     {
         var (laneA, laneB) = GetStatResultsAcrossLanes(sourceStatId);
 
-        double GetValue(StatResult result) => overridePayload.StatOverrideType switch
+        return overridePayload.StatOverrideType switch
         {
-            StatOverrideType.FlatOverride => result.FlatTotalValue,
-            StatOverrideType.FinalOverride => result.ResolvedValue,
-            _ => result.FinalValue
-        };
-
-        return lane switch
-        {
-            StatStateLane.Mainhand => GetValue(laneA),
-            StatStateLane.Offhand when laneB is { } b => GetValue(b),
-            _ => GetValue(laneA)
+            StatOverrideType.FlatOverride => AverageLanes(laneA.FlatTotalValue, laneB?.FlatTotalValue),
+            StatOverrideType.FinalOverride => AverageLanes(laneA.ResolvedValue, laneB?.ResolvedValue),
+            _ => AverageLanes(laneA.FinalValue, laneB?.FinalValue)
         };
     }
 
     private double ResolveContributionValue(StatContributionPayload contributionPayload, StatPayloadInstance payloadInstance, bool isSecondary)
     {
         var (laneA, laneB) = GetStatResultsAcrossLanes(contributionPayload.SourceStatId);
-        double sourceValue = laneA.FlatTotalValue + (laneB?.FlatTotalValue ?? 0.0);
+
+        double sourceValue = AverageLanes(laneA.FlatTotalValue, laneB?.FlatTotalValue);
 
         double coefficient = isSecondary ? (payloadInstance.Secondary ?? 0.0) : payloadInstance.Primary;
 
@@ -743,13 +805,13 @@ public sealed partial class StatsComponent
         
         double sourceValue = translationPayload.StatTranslationType switch
         {
-            StatTranslationType.Conversion => laneA.PreMultiplierValue + (laneB?.PreMultiplierValue ?? 0.0),
+            StatTranslationType.Conversion => AverageLanes(laneA.DerivedPreConversionValue, laneB?.DerivedPreConversionValue),
             
-            StatTranslationType.DerivationPreMultipliers => laneA.FlatTotalValue + (laneB?.FlatTotalValue ?? 0.0),
+            StatTranslationType.DerivationPreMultipliers => AverageLanes(laneA.FlatTotalValue, laneB?.FlatTotalValue),
 
-            StatTranslationType.DerivationPostMultipliers => laneA.PostMultiplierValue + (laneB?.PostMultiplierValue ?? 0.0),
+            StatTranslationType.DerivationPostMultipliers => AverageLanes(laneA.PostMultiplierValue, laneB?.PostMultiplierValue),
 
-            StatTranslationType.DerivationLast => laneA.FinalValue + (laneB?.FinalValue ?? 0.0),
+            StatTranslationType.DerivationLast => AverageLanes(laneA.FinalValue, laneB?.FinalValue),
 
             _ => 0.0
         };
@@ -763,11 +825,11 @@ public sealed partial class StatsComponent
 
         double sourceValue = mirrorPayload.StatStaticType switch
         {
-            StatStaticType.Flat => laneA.AddedFlat + (laneB?.AddedFlat ?? 0.0),
+            StatStaticType.Flat => AverageLanes(laneA.AddedFlat, laneB?.AddedFlat),
 
-            StatStaticType.PercentAdditive => laneA.AdditiveMultiplier + (laneB?.AdditiveMultiplier ?? 0.0),
+            StatStaticType.PercentAdditive => AverageLanes(laneA.AdditiveMultiplier, laneB?.AdditiveMultiplier),
 
-            StatStaticType.PercentMultiplicative => laneA.MultiplicativeMultiplier + (laneB?.MultiplicativeMultiplier ?? 0.0),
+            StatStaticType.PercentMultiplicative => AverageLanes(laneA.MultiplicativeMultiplier, laneB?.MultiplicativeMultiplier),
 
             _ => 0.0
         };
@@ -782,4 +844,6 @@ public sealed partial class StatsComponent
         //implement later
         return true;
     }
+
+    private double AverageLanes(double valueA, double? valueB) => valueB is { } b ? (valueA + b) / 2.0 : valueA;
 }

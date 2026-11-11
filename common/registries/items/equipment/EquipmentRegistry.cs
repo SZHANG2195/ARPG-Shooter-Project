@@ -17,8 +17,8 @@ public sealed class EquipmentRegistry
         _errorConfig = errorConfig;
     }
 
-    public static EquipmentRegistry Build(IEnumerable<EquipmentDefinition> defs, ErrorConfig errorConfig) => 
-        new(Registry<ItemId, EquipmentDefinition>.Build(defs, d => d.Id, "DefinitionEquipment", errorConfig), errorConfig);
+    public static EquipmentRegistry Build(IEnumerable<EquipmentDefinition> definitions, ErrorConfig errorConfig) => 
+        new(Registry<ItemId, EquipmentDefinition>.Build(definitions, definition => definition.Id, "DefinitionEquipment", errorConfig), errorConfig);
 
     public bool Contains(ItemId id) => _all.Contains(id);
     public bool TryGet(ItemId id, out EquipmentDefinition def) => _all.TryGet(id, out def);

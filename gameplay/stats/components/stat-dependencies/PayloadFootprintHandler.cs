@@ -44,7 +44,7 @@ public sealed class PayloadFootprintHandler
 
     private PayloadFootprint Describe(PayloadId id, IPayload payload)
 	{
-    	static IEnumerable<(StatId, EdgeKind)> From(StatId? stat, EdgeKind kind) => stat is { } s ? [(s, kind)] : [];
+    	static IEnumerable<(StatId, EdgeKind)> From(StatId? stat, EdgeKind kind) => stat is { } resolvedStat ? [(resolvedStat, kind)] : [];
     	//static IEnumerable<(StatId, EdgeKind)> FromMany(IEnumerable<StatId?> stats, EdgeKind kind) => stats.Where(s => s.HasValue).Select(s => (s!.Value, kind));
 
     	return payload switch
@@ -74,7 +74,7 @@ public sealed class PayloadFootprintHandler
                 	: From(footprint.SourceStatId, EdgeKind.Evaluation).Concat(From(footprint.SourceStatId, EdgeKind.Resource))]),
 
         	StatMirrorPayload footprint => Make(id, footprint.TargetStatId, footprint.TargetTags, footprint.ExcludedTags, footprint.TargetWithoutCounterpart, false,
-            	[.. From(footprint.SourceStatId, EdgeKind.Mirror)]),
+            	[.. From(footprint.SourceStatId, EdgeKind.Evaluation)]),
 
         	_ => throw new NotSupportedException($"No graph rules for {payload.GetType().Name}.")
     	};
@@ -135,6 +135,12 @@ public sealed class PayloadFootprintHandler
 		}
 
     	if (hasSecondary && secondary.Count == 0) throw new InvalidOperationException($"[{Source}]: Payload '{id}' has secondary values but its target isn't range-paired.");
+
+		foreach (var (readStat, _) in reads)
+    	{
+        	if (writes.Contains(readStat) || secondary.Contains(readStat)) throw new InvalidOperationException(
+            	$"[{Source}]: Payload '{id}' reads '{readStat}' and also writes to it (check its target stat and target tags).");
+    	}
 
     	return new PayloadFootprint(writes, reads) { SecondaryWrites = secondary.ToImmutable() };
 	}

@@ -37,9 +37,9 @@ public static class SupabaseSyncService
             string error = await response.Content.ReadAsStringAsync();
             GD.PushError($"[{Source}]: Error fetching {tableName}: HTTP {(int)response.StatusCode} - {error}");
         }
-        catch (Exception ex)
+        catch (Exception exception)
         {
-            GD.PushError($"[{Source}]: Network exception for {tableName}: {ex}");
+            GD.PushError($"[{Source}]: Network exception for {tableName}: {exception}");
         }
 
         return null;

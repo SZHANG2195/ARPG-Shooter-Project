@@ -21,8 +21,8 @@ public partial class GameBootstrap : Node
         try
         {
             var globalConfig = new ErrorConfig(
-                OnError: msg => { if (OS.IsDebugBuild()) throw new InvalidOperationException(msg); GD.PushError(msg); },
-                OnWarning: msg => GD.PrintRich($"[color=yellow]{msg}[/color]"),
+                OnError: message => { if (OS.IsDebugBuild()) throw new InvalidOperationException(message); GD.PushError(message); },
+                OnWarning: message => GD.PrintRich($"[color=yellow]{message}[/color]"),
                 StrictValidation: OS.IsDebugBuild()
             );
 

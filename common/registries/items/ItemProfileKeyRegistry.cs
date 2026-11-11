@@ -16,8 +16,8 @@ public sealed class ItemProfileKeyRegistry
         _errorConfig = errorConfig;
     }
 
-    public static ItemProfileKeyRegistry Build(IEnumerable<ItemProfileKeyDefinition> defs, ErrorConfig errorConfig) => 
-        new(Registry<ItemProfileKeyId, ItemProfileKeyDefinition>.Build(defs, d => d.Id, "DefinitionItemProfileKeys", errorConfig), errorConfig);
+    public static ItemProfileKeyRegistry Build(IEnumerable<ItemProfileKeyDefinition> definition, ErrorConfig errorConfig) => 
+        new(Registry<ItemProfileKeyId, ItemProfileKeyDefinition>.Build(definition, definition => definition.Id, "DefinitionItemProfileKeys", errorConfig), errorConfig);
 
     public bool Contains(ItemProfileKeyId id) => _all.Contains(id);
     public ItemProfileKeyDefinition Get(ItemProfileKeyId id) => _all.Get(id);

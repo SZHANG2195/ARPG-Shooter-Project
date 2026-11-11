@@ -1,2 +1,2 @@
 namespace lethal.gameplay.stats.components.stat_dependencies.enums;
-public enum EdgeKind { Evaluation, Mirror, Resource }
+public enum EdgeKind { Evaluation, Resource }

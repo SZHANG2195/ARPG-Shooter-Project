@@ -23,8 +23,8 @@ public sealed class StatRegistry
 
     public static StatRegistry Build(IEnumerable<StatDefinition> definitions, TagRegistry tags, ErrorConfig errorConfig)
     {
-        var all = Registry<StatId, StatDefinition>.Build(definitions, d => d.Id, "DefinitionStats", errorConfig);
-    	var tagSets = all.All.ToFrozenDictionary(d => d.Id, d => tags.Expand(d.TagIds));
+        var all = Registry<StatId, StatDefinition>.Build(definitions, definition => definition.Id, "DefinitionStats", errorConfig);
+    	var tagSets = all.All.ToFrozenDictionary(stat => stat.Id, stat => tags.Expand(stat.TagIds));
         return new StatRegistry(all, tagSets, errorConfig);
     }
 

@@ -85,9 +85,9 @@ public static class DataSyncService
 		//version is first column so we can just pull the first column
         if (await exists.ExecuteScalarAsync() is null) return 0;
 
-        var cmd = connection.CreateCommand();
-        cmd.CommandText = $"SELECT payload_json FROM {MetaTable} LIMIT 1;";
-        if (await cmd.ExecuteScalarAsync() is not string json || string.IsNullOrWhiteSpace(json)) return 0;
+        var command = connection.CreateCommand();
+        command.CommandText = $"SELECT payload_json FROM {MetaTable} LIMIT 1;";
+        if (await command.ExecuteScalarAsync() is not string json || string.IsNullOrWhiteSpace(json)) return 0;
 
         using var doc = JsonDocument.Parse(json);
         return Math.Max(0, TryReadVersion(doc.RootElement));

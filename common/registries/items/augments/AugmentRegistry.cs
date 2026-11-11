@@ -17,8 +17,8 @@ public sealed class AugmentRegistry
         _errorConfig = errorConfig;
     }
 
-    public static AugmentRegistry Build(IEnumerable<AugmentDefinition> defs, ErrorConfig errorConfig) => 
-        new(Registry<ItemId, AugmentDefinition>.Build(defs, d => d.Id, "DefinitionAugments", errorConfig), errorConfig);
+    public static AugmentRegistry Build(IEnumerable<AugmentDefinition> definitions, ErrorConfig errorConfig) => 
+        new(Registry<ItemId, AugmentDefinition>.Build(definitions, definition => definition.Id, "DefinitionAugments", errorConfig), errorConfig);
 
     public bool Contains(ItemId id) => _all.Contains(id);
     public bool TryGet(ItemId id, out AugmentDefinition def) => _all.TryGet(id, out def);

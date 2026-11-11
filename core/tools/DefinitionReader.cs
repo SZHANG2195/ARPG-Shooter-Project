@@ -11,11 +11,11 @@ public static class DefinitionReader
 
     public static List<TDef> ReadTable<TDef>(SqliteConnection connection, string table, JsonSerializerOptions options)
     {
-        var defs = new List<TDef>();
+        var definitions = new List<TDef>();
 
-        using var cmd = connection.CreateCommand();
-        cmd.CommandText = $"SELECT payload_json FROM {table};"; 
-        using var reader = cmd.ExecuteReader();
+        using var command = connection.CreateCommand();
+        command.CommandText = $"SELECT payload_json FROM {table};"; 
+        using var reader = command.ExecuteReader();
 
         int row = 0;
         while (reader.Read())
@@ -24,14 +24,14 @@ public static class DefinitionReader
             string json = reader.GetString(0);
             try
             {
-                defs.Add(JsonSerializer.Deserialize<TDef>(json, options) ?? throw new JsonException($"[{Source}]: {table} row {row}: Deserialized to null."));
+                definitions.Add(JsonSerializer.Deserialize<TDef>(json, options) ?? throw new JsonException($"[{Source}]: {table} row {row}: Deserialized to null."));
             }
-            catch (JsonException ex)
+            catch (JsonException exception)
             {
                 string snippet = json.Length <= 120 ? json : json[..120] + "...";
-                throw new InvalidDataException($"[{Source}]: {table} row {row}: {ex.Message}\n  {snippet}", ex);
+                throw new InvalidDataException($"[{Source}]: {table} row {row}: {exception.Message}\n  {snippet}", exception);
             }
         }
-        return defs;
+        return definitions;
     }
 }

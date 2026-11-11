@@ -26,27 +26,27 @@ public sealed class TagRegistry
 
     public static TagRegistry Build(IEnumerable<TagDefinition> definitions, ErrorConfig errorConfig)
     {
-        var all = Registry<TagId, TagDefinition>.Build(definitions, d => d.Id, "DefinitionTags", errorConfig);
-        var ids = definitions.Select(d => d.Id.Value).ToHashSet(StringComparer.Ordinal);
+        var all = Registry<TagId, TagDefinition>.Build(definitions, definition => definition.Id, "DefinitionTags", errorConfig);
+        var tagIds = definitions.Select(tag => tag.Id.Value).ToHashSet(StringComparer.Ordinal);
 
         var ancestors = new Dictionary<TagId, ImmutableArray<TagId>>();
         var namespaces = new Dictionary<string, List<TagId>>(StringComparer.Ordinal); 
-        foreach (var def in definitions)
+        foreach (var definition in definitions)
         {
             var found = ImmutableArray.CreateBuilder<TagId>();
-            var path = def.Id.Value;
-            int dot;
-            while ((dot = path.LastIndexOf('.')) > 0)
+            var path = definition.Id.Value;
+            int dotIndex;
+            while ((dotIndex = path.LastIndexOf('.')) > 0)
             {
-                path = path[..dot];
-                if (ids.Contains(path)) found.Add(new TagId(path));
+                path = path[..dotIndex];
+                if (tagIds.Contains(path)) found.Add(new TagId(path));
 
                 if (!namespaces.TryGetValue(path, out var bucket)) namespaces[path] = bucket = new List<TagId>();
-                bucket.Add(def.Id); //not every prefix is an actual tag within the database
+                bucket.Add(definition.Id); //not every prefix is an actual tag within the database
             }
-            ancestors[def.Id] = found.ToImmutable();
+            ancestors[definition.Id] = found.ToImmutable();
         }
-        return new TagRegistry(all, ancestors.ToFrozenDictionary(), namespaces.ToFrozenDictionary(kv => kv.Key, kv => kv.Value.ToImmutableArray()), errorConfig);
+        return new TagRegistry(all, ancestors.ToFrozenDictionary(), namespaces.ToFrozenDictionary(keyValuePair => keyValuePair.Key, keyValuePair => keyValuePair.Value.ToImmutableArray()), errorConfig);
     }
 
     public bool Contains(TagId id) => _all.Contains(id);

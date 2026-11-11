@@ -93,8 +93,7 @@ public sealed class StatGraph
     private bool WouldCreateCycle(PayloadId via, StatId read, StatId write)
     {
         if (read == write) return true;
-
-        // Check if writing back to 'read' can already reach 'write' through existing edges
+        
         return Reaches(write, read, new HashSet<StatId>(), new List<(StatId Stat, PayloadId Via)>());
     }
 
