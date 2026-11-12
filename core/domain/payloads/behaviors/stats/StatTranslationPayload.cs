@@ -4,7 +4,7 @@ using lethal.core.domain.payloads.enums;
 using lethal.core.domain.stats;
 
 namespace lethal.core.domain.payloads;
-public sealed record StatTranslationPayload : IPayload, IContextualPayload
+public sealed record StatTranslationPayload : IPayload, IContextualPayload, IDefaultDisablingPayload
 {
 	public required StatTranslationType StatTranslationType { get; init; }
     public PayloadResolveOn? ResolveOn { get; init; }

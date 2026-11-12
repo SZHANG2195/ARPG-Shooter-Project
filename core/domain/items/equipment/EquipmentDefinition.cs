@@ -2,7 +2,6 @@ using System.Collections.Immutable;
 using System.Text.Json.Serialization;
 using lethal.core.domain.affixes;
 using lethal.core.domain.payloads;
-using lethal.core.domain.tags;
 
 namespace lethal.core.domain.items.equipment;
 public sealed record EquipmentDefinition

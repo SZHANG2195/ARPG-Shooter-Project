@@ -1,3 +1,4 @@
+using lethal.core.domain.payloads;
 using lethal.core.domain.stats;
 using lethal.core.domain.tags;
 using lethal.gameplay.payloads.instances;
@@ -10,6 +11,7 @@ public sealed partial class StatsComponent
 	{
     	public readonly List<StatPayloadInstance> Instances = new();
     	public readonly HashSet<(StatId StatId, StatStateLane Lane)> PushedKeys = new();
+		public readonly List<PayloadId> AppliedDisables = new();
 		public readonly TagSet Tags;
 
 		public StatSourceEntry(TagSet tags) => Tags = tags;

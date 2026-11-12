@@ -4,7 +4,6 @@ using System.Collections.Immutable;
 using System.Linq;
 using lethal.common.registries.payloads;
 using lethal.common.registries.tags;
-using lethal.core.config;
 using lethal.core.domain.payloads;
 using lethal.core.domain.payloads.enums;
 using lethal.core.domain.stats;

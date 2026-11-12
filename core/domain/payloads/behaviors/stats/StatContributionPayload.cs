@@ -5,7 +5,7 @@ using lethal.core.domain.stats;
 using lethal.core.domain.tags;
 
 namespace lethal.core.domain.payloads;
-public sealed record StatContributionPayload : IPayload, IContextualPayload
+public sealed record StatContributionPayload : IPayload, IContextualPayload, IDefaultDisablingPayload
 {
 	public required ContributionSourceType ContributionSourceType { get; init; }
     public required StatStaticType StatStaticType { get; init; }

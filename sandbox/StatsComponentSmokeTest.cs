@@ -7,7 +7,6 @@ using lethal.gameplay.payloads.sources;
 using lethal.gameplay.stats.components;
 using lethal.core.config;
 using lethal.common.registries;
-using lethal.gameplay.stats.components.stat_dependencies;
 using lethal.gameplay.payloads.enums;
 
 public static class StatsComponentSmokeTest

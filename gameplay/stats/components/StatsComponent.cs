@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 using lethal.common.registries.payloads;
 using lethal.common.registries.tags;
 using lethal.core.config;
 using lethal.core.domain.characters;
-using lethal.core.domain.context;
 using lethal.core.domain.payloads;
 using lethal.core.domain.payloads.enums;
 using lethal.core.domain.stats;
@@ -24,6 +24,7 @@ public sealed partial class StatsComponent
     private readonly PayloadFootprintHandler _footprintHandler;
     private readonly PayloadRegistry _payloadRegistry;
     private readonly HashSet<StatId> _scratch = new();
+    private readonly Stack<List<ValidPayloadContext>> _validPayloadPool = new();
 
     private const string Source = nameof(StatsComponent);
 
@@ -90,26 +91,8 @@ public sealed partial class StatsComponent
             {
                 foreach (var disabledId in disablingPayload.DisabledDefaultIds)
                 {
-                    if (!_disabledDefaultIdCounts.TryGetValue(disabledId, out var count)) count = 0;
-
-                     _disabledDefaultIdCounts[disabledId] = count + 1;
-
-                     if (count == 0)
-                    {
-                        var newlyDisabledFootprint = _footprintHandler.Of(disabledId);
-                        foreach (var stat in newlyDisabledFootprint.PrimaryWrites)
-                        {
-                            MarkDirty(stat);
-                        }
-                        foreach (var stat in newlyDisabledFootprint.SecondaryWrites)
-                        {
-                            MarkDirty(stat);
-                        }
-                        foreach (var stat in newlyDisabledFootprint.Drains)
-                        {
-                            MarkDirty(stat);
-                        }
-                    }
+                    sourceEntry.AppliedDisables.Add(disabledId);
+                    Disable(disabledId);
                 }
             }
         }
@@ -117,75 +100,6 @@ public sealed partial class StatsComponent
         foreach (var sourceValue in sourceValues)
         {
             InstallSourceValue(sourceEntry, sourceValue);
-        }
-
-        return true;
-    }
-
-    public bool RemoveSource(PayloadSourceHandle sourceHandle)
-    {
-        if (!_activeSources.Remove(sourceHandle, out var sourceEntry)) return false;
-
-        foreach (var payloadInstance in sourceEntry.Instances)
-        {
-            var footprint = _footprintHandler.Of(payloadInstance.PayloadId);
-            _statGraph.Remove(payloadInstance.PayloadId, footprint);
-
-            var definition = _payloadRegistry.Get(payloadInstance.PayloadId);
-            if (definition.PayloadData is IDefaultDisablingPayload disablingPayload && !disablingPayload.DisabledDefaultIds.IsDefaultOrEmpty)
-            {
-                foreach (var disabledId in disablingPayload.DisabledDefaultIds)
-                {
-                    if (!_disabledDefaultIdCounts.TryGetValue(disabledId, out var count))
-                    {
-                        if (count <= 1) 
-                        {
-                            _disabledDefaultIdCounts.Remove(disabledId);
-
-                            var reenabledFootprint = _footprintHandler.Of(disabledId);
-                            foreach (var stat in reenabledFootprint.PrimaryWrites)
-                            {
-                                MarkDirty(stat);
-                            }
-                            foreach (var stat in reenabledFootprint.SecondaryWrites)
-                            {
-                                MarkDirty(stat);
-                            }
-                            foreach (var stat in reenabledFootprint.Drains)
-                            {
-                                MarkDirty(stat);
-                            }
-                        }
-                        else _disabledDefaultIdCounts[disabledId] = count - 1;
-                    }
-                }
-            }
-
-            foreach (var stat in footprint.PrimaryWrites)   
-            { 
-                var state = _states[stat];
-                state.PrimaryInstances.Remove(payloadInstance);
-                MarkDirty(stat); 
-            }
-            foreach (var stat in footprint.SecondaryWrites) 
-            {
-                var state = _states[stat];
-                state.SecondaryInstances.Remove(payloadInstance); 
-                MarkDirty(stat); 
-            }
-            foreach (var stat in footprint.Drains)
-            {
-                var state = _states[stat];
-                state.DrainInstances.Remove(payloadInstance);
-                MarkDirty(stat);
-            }
-        }
-
-        foreach (var (stat, lane) in sourceEntry.PushedKeys)
-        {
-            _states[stat].SourceValues.RemoveAll(v => v.SourceHandle == sourceHandle && v.Lane == lane);
-            if (lane == StatStateLane.Default) MarkDirty(stat);
-            else MarkLaneDirty(stat, lane);
         }
 
         return true;
@@ -228,6 +142,91 @@ public sealed partial class StatsComponent
 
         if (sourceValue.Lane == StatStateLane.Default) MarkDirty(sourceValue.Stat);
         else MarkLaneDirty(sourceValue.Stat, sourceValue.Lane);
+    }
+
+    public bool RemoveSource(PayloadSourceHandle sourceHandle)
+    {
+        if (!_activeSources.Remove(sourceHandle, out var sourceEntry)) return false;
+
+        foreach (var payloadInstance in sourceEntry.Instances)
+        {
+            var footprint = _footprintHandler.Of(payloadInstance.PayloadId);
+            _statGraph.Remove(payloadInstance.PayloadId, footprint);
+
+            var definition = _payloadRegistry.Get(payloadInstance.PayloadId);
+            if (definition.PayloadData is IDefaultDisablingPayload disablingPayload && !disablingPayload.DisabledDefaultIds.IsDefaultOrEmpty)
+            {
+                foreach (var disabledId in sourceEntry.AppliedDisables)
+                {
+                    Enable(disabledId); 
+                }
+            }
+
+            foreach (var stat in footprint.PrimaryWrites)   
+            { 
+                var state = _states[stat];
+                state.PrimaryInstances.Remove(payloadInstance);
+                MarkDirty(stat); 
+            }
+            foreach (var stat in footprint.SecondaryWrites) 
+            {
+                var state = _states[stat];
+                state.SecondaryInstances.Remove(payloadInstance); 
+                MarkDirty(stat); 
+            }
+            foreach (var stat in footprint.Drains)
+            {
+                var state = _states[stat];
+                state.DrainInstances.Remove(payloadInstance);
+                MarkDirty(stat);
+            }
+        }
+
+        foreach (var (stat, lane) in sourceEntry.PushedKeys)
+        {
+            _states[stat].SourceValues.RemoveAll(v => v.SourceHandle == sourceHandle && v.Lane == lane);
+            if (lane == StatStateLane.Default) MarkDirty(stat);
+            else MarkLaneDirty(stat, lane);
+        }
+
+        return true;
+    }
+
+    private void Disable(PayloadId id)
+    {
+        _disabledDefaultIdCounts[id] = _disabledDefaultIdCounts.GetValueOrDefault(id) + 1;
+        if (_disabledDefaultIdCounts[id] == 1) DirtyWrites(id);
+    }
+
+    private void Enable(PayloadId id)
+    {
+        if (!_disabledDefaultIdCounts.TryGetValue(id, out var count)) return;
+        if (count > 1) 
+        { 
+            _disabledDefaultIdCounts[id] = count - 1;
+            return; 
+        }
+        _disabledDefaultIdCounts.Remove(id);
+        DirtyWrites(id);
+    }
+
+    private bool IsDisabled(StatPayloadInstance payloadInstance) => _disabledDefaultIdCounts.Count > 0 && _disabledDefaultIdCounts.ContainsKey(payloadInstance.PayloadId);
+
+    private void DirtyWrites(PayloadId id)
+    {
+        var footprint = _footprintHandler.Of(id);
+        foreach (var stat in footprint.PrimaryWrites)
+        {
+            MarkDirty(stat);
+        }
+        foreach (var stat in footprint.SecondaryWrites) 
+        {
+            MarkDirty(stat);
+        }
+        foreach (var stat in footprint.Drains)
+        {
+            MarkDirty(stat);
+        }
     }
 
     private void MarkDirty(StatId statId)
@@ -302,113 +301,160 @@ public sealed partial class StatsComponent
         }
     }
 
+    private void GetValidPayloads(StatState state, List<ValidPayloadContext> results,bool checkSetsDefault = true, bool drainsOnly = false)
+    {
+        if (drainsOnly)
+        {
+            foreach (var instance in state.DrainInstances)
+            {
+                if (IsDisabled(instance)) continue;
+
+                var footprint = _footprintHandler.Of(instance.PayloadId);
+                if (footprint.SetsDefault) continue;
+
+                var payloadData = _payloadRegistry.Get(instance.PayloadId).PayloadData;
+                if (!PassesContextCheck(payloadData)) continue;
+
+                results.Add(new ValidPayloadContext 
+                { 
+                    Instance = instance, 
+                    PayloadData = payloadData, 
+                    Value = instance.Primary, 
+                    IsSecondary = false 
+                });
+            }
+            return;
+        }
+        foreach (var instance in state.PrimaryInstances)
+        {
+            if (IsDisabled(instance)) continue;
+
+            var footprint = _footprintHandler.Of(instance.PayloadId);
+            if (checkSetsDefault && footprint.SetsDefault) continue;
+
+            var payloadData = _payloadRegistry.Get(instance.PayloadId).PayloadData;
+            if (!PassesContextCheck(payloadData)) continue;
+
+            results.Add(new ValidPayloadContext 
+            { 
+                Instance = instance, 
+                PayloadData = payloadData, 
+                Value = instance.Primary, 
+                IsSecondary = false 
+            });
+        }
+        foreach (var instance in state.SecondaryInstances)
+        {
+            if (IsDisabled(instance)) continue;
+            var footprint = _footprintHandler.Of(instance.PayloadId);
+            if (checkSetsDefault && footprint.SetsDefault) continue;
+            var payloadData = _payloadRegistry.Get(instance.PayloadId).PayloadData;
+            if (!PassesContextCheck(payloadData)) continue;
+
+            double value = payloadData is StatStaticPayload or StatOverridePayload or StatContributionPayload
+                ? (instance.Secondary ?? instance.Primary)
+                : instance.Primary;
+
+            results.Add(new ValidPayloadContext 
+            { 
+                Instance = instance, 
+                PayloadData = payloadData, 
+                Value = value, 
+                IsSecondary = true 
+            });
+        }
+    }
+
     private StatResult EvaluateStat(StatStateLane lane, StatState state, ref StatLaneResult laneResult)
     {
-        double baseValue = ResolveBaseValue(state, lane);
+        using var validPayloads = new PooledPayloadList(this);
+        GetValidPayloads(state, validPayloads.List);
+        ReadOnlySpan<ValidPayloadContext> standardPayloads = CollectionsMarshal.AsSpan(validPayloads.List);
+
+        double baseValue = ResolveBaseValue(state, lane, standardPayloads);
         laneResult.Result = StatResult.Seed(baseValue);
 
-        double accumulatedFlatValue = ResolveFlatValue(state, lane);
+        double accumulatedFlatValue = ResolveFlatValue(state, lane, standardPayloads);
         laneResult.Result = laneResult.Result.ApplyFlatValue(accumulatedFlatValue);
 
-        double? flatOverrideValue = ResolveFlatOverrideValue(state, lane);
+        double? flatOverrideValue = ResolveFlatOverrideValue(state, standardPayloads);
         if (flatOverrideValue is { } resolvedFlatOverrideValue) laneResult.Result = laneResult.Result.ApplyFlatOverrideValue(resolvedFlatOverrideValue);
 
-        double accumulatedDerivedFlatValue = ResolveDerivedFlatValue(state);
+        double accumulatedDerivedFlatValue = ResolveDerivedFlatValue(state, standardPayloads);
         laneResult.Result = laneResult.Result.ApplyDerivedPreConversionValue(accumulatedDerivedFlatValue);
 
-        double accumulatedConversionFlatValue = ResolveConversionFlatValue(state, laneResult.Result);
+        double accumulatedConversionFlatValue = ResolveConversionFlatValue(state, laneResult.Result, standardPayloads);
         laneResult.Result = laneResult.Result.ApplyConvertedValue(accumulatedConversionFlatValue);
 
-        var (accumulatedAdditiveValue, accumulatedMultiplicativeValue) = ResolveMultiplierValue(state);
-        laneResult.Result = laneResult.Result.ApplyMultiplierValue(accumulatedAdditiveValue, accumulatedMultiplicativeValue);
+        var (accumulatedRawAdditiveValue, accumulatedRawMultiplicativeValue) = ResolveMultiplierValue(state, standardPayloads);
+        laneResult.Result = laneResult.Result.ApplyRawMultiplierValue(accumulatedRawAdditiveValue, accumulatedRawMultiplicativeValue);
 
-        double accumulatedDerivedPostMultiplierValue = ResolveDerivedPostMultiplierValue(state);
+        var (accumulatedMirroredAdditiveValue, accumulatedMirroredMultiplicativeValue) = ResolveMirroredMultiplierValue(state, standardPayloads);
+        laneResult.Result = laneResult.Result.ApplyMirroredMultiplierValue(accumulatedMirroredAdditiveValue, accumulatedMirroredMultiplicativeValue);
+
+        double accumulatedDerivedPostMultiplierValue = ResolveDerivedPostMultiplierValue(state, laneResult.Result, standardPayloads);
         laneResult.Result = laneResult.Result.ApplyDerivedPostMultiplierValue(accumulatedDerivedPostMultiplierValue);
 
-        double accumulatedDerivedFinalValue = ResolveDerivedResolvedValue(state);
+        double accumulatedDerivedFinalValue = ResolveDerivedResolvedValue(state, laneResult.Result, standardPayloads);
         laneResult.Result = laneResult.Result.ApplyDerivedResolvedValue(accumulatedDerivedFinalValue);
 
-        double? finalOverrideValue = ResolveFinalOverrideValue(state, lane);
+        double? finalOverrideValue = ResolveFinalOverrideValue(state, standardPayloads);
         if (finalOverrideValue is { } resolvedFinalOverrideValue) laneResult.Result = laneResult.Result.ApplyFinalOverrideValue(resolvedFinalOverrideValue);
 
         return laneResult.Result;
     }
 
-    private double ResolveBaseValue(StatState state, StatStateLane lane)
+    private double ResolveBaseValue(StatState state, StatStateLane lane, ReadOnlySpan<ValidPayloadContext> standardPayloads)
     {
-        double? defaultOverrideValue = null;
-        bool hasDefaultOverride = false;
+        double? largestPushedBaseValue = null;
+        int pushedBaseCount = 0;
 
-        foreach (var payloadInstance in state.PrimaryInstances)
-        {
-            var footprint = _footprintHandler.Of(payloadInstance.PayloadId);
-
-            var payloadData = _payloadRegistry.Get(payloadInstance.PayloadId).PayloadData;
-            if (!PassesContextCheck(payloadData)) continue;
-
-            if (_disabledDefaultIdCounts.ContainsKey(payloadInstance.PayloadId)) continue;
-
-            if (footprint.SetsDefault)
-            {
-                if (hasDefaultOverride)
-                {
-                    string statId = state.Id.ToString();
-                    var message = $"Stat '{statId}' has multiple default overrides in primary instances. Overriding with the last one.";
-                    _errorConfig.ReportError(Source, message);
-                }
-                defaultOverrideValue = payloadInstance.Primary;
-                hasDefaultOverride = true; 
-            }
-        }
-        foreach (var payloadInstance in state.SecondaryInstances)
-        {
-            var footprint = _footprintHandler.Of(payloadInstance.PayloadId);
-
-            var payloadData = _payloadRegistry.Get(payloadInstance.PayloadId).PayloadData;
-            if (!PassesContextCheck(payloadData)) continue;
-
-            if (_disabledDefaultIdCounts.ContainsKey(payloadInstance.PayloadId)) continue;
-
-            if (footprint.SetsDefault && payloadInstance.Secondary is { } secondaryOverride)
-            {
-                if (hasDefaultOverride)
-                {
-                    string statId = state.Id.ToString();
-                    var message = $"Stat '{statId}' has multiple default overrides in secondary instances. Overriding with the last one.";
-                    _errorConfig.ReportError(Source, message);
-                }
-                defaultOverrideValue = secondaryOverride;
-                hasDefaultOverride = true; 
-            }
-        }
-
-        state.DefaultOverrideValue = defaultOverrideValue;
-
-        double baseValue = 0.0;
-        bool hasPushedBases = false;
         foreach (var sourceValue in state.SourceValues)
         {
             if (sourceValue.IsBase && (sourceValue.Lane == lane || sourceValue.Lane == StatStateLane.Default))
             {
-                if(hasPushedBases)
-                {
-                    string statId = state.Id.ToString();
-                    var message = $"Stat '{statId}' has multiple base values. Overriding with the highest base value.";
-                    _errorConfig.ReportError(Source, message);
-                    baseValue = Math.Max(baseValue, sourceValue.Value);
-                } 
-                else baseValue = sourceValue.Value;
-                hasPushedBases = true;
+                pushedBaseCount++;
+                if (largestPushedBaseValue is null || sourceValue.Value > largestPushedBaseValue.Value) largestPushedBaseValue = sourceValue.Value;
             }
         }
 
-        double resolvedBase = hasPushedBases ? baseValue : state.OriginalBaseValue;
+        if (pushedBaseCount > 1)
+        {
+            string statId = state.Id.ToString();
+            var message = $"Stat '{statId}' has {pushedBaseCount} base value sources. Applying the largest value ({largestPushedBaseValue}).";
+            _errorConfig.ReportError(Source, message);
+        }
+
+        double resolvedBase = largestPushedBaseValue ?? state.OriginalBaseValue;
+
+        double? largestDefaultOverrideValue = null;
+        int defaultOverrideCount = 0;
+
+        foreach (var context in standardPayloads)
+        {
+            var footprint = _footprintHandler.Of(context.Instance.PayloadId);
+            if (footprint.SetsDefault)
+            {
+                defaultOverrideCount++;
+                if (largestDefaultOverrideValue is null || context.Value > largestDefaultOverrideValue.Value) largestDefaultOverrideValue = context.Value;
+            }
+        }
+
+        if (defaultOverrideCount > 1)
+        {
+            string statId = state.Id.ToString();
+            var message = $"Stat '{statId}' has {defaultOverrideCount} default override instances. Applying the largest value ({largestDefaultOverrideValue}).";
+            _errorConfig.ReportError(Source, message);
+        }
+
+        state.DefaultOverrideValue = largestDefaultOverrideValue;
+
         double effectiveBase = state.DefaultOverrideValue ?? resolvedBase;
 
         return effectiveBase;
     }
 
-    private double ResolveFlatValue(StatState state, StatStateLane lane)
+    private double ResolveFlatValue(StatState state, StatStateLane lane, ReadOnlySpan<ValidPayloadContext> standardPayloads)
     {
         double accumulatedFlatValue = 0.0;
 
@@ -420,142 +466,65 @@ public sealed partial class StatsComponent
             }
         }
 
-        foreach (var payloadInstance in state.PrimaryInstances)
+        foreach (var context in standardPayloads)
         {
-            var footprint = _footprintHandler.Of(payloadInstance.PayloadId);
-            if (footprint.SetsDefault) continue;
-
-            var payloadData = _payloadRegistry.Get(payloadInstance.PayloadId).PayloadData;
-            if (!PassesContextCheck(payloadData)) continue;
-
-            if (_disabledDefaultIdCounts.ContainsKey(payloadInstance.PayloadId)) continue;
-
-            accumulatedFlatValue += payloadData switch
+            accumulatedFlatValue += context.PayloadData switch
             {
                 StatStaticPayload staticPayload when staticPayload.StatStaticType == StatStaticType.Flat => 
-                    payloadInstance.Primary,
+                    context.Value,
 
                 StatContributionPayload contributionPayload when contributionPayload.StatStaticType == StatStaticType.Flat 
                     && contributionPayload.ContributionSourceType == ContributionSourceType.StaticStat => 
-                        ResolveContributionValue(contributionPayload, payloadInstance, false),
+                        ResolveContributionSourceValue(contributionPayload) * context.Value,
 
                 _ => 0.0
             };
         }
 
-        foreach (var payloadInstance in state.SecondaryInstances)
-        {
-            if (payloadInstance.Secondary is { } secondaryValue)
-            {
-                var footprint = _footprintHandler.Of(payloadInstance.PayloadId);
-                if (footprint.SetsDefault) continue;
-
-                if (_disabledDefaultIdCounts.ContainsKey(payloadInstance.PayloadId)) continue;
-
-                var payloadData = _payloadRegistry.Get(payloadInstance.PayloadId).PayloadData;
-                if (!PassesContextCheck(payloadData)) continue;
-
-                accumulatedFlatValue += payloadData switch
-                {
-                    StatStaticPayload staticPayload when staticPayload.StatStaticType == StatStaticType.Flat => 
-                        secondaryValue,
-
-                    StatContributionPayload contributionPayload when contributionPayload.StatStaticType == StatStaticType.Flat 
-                        && contributionPayload.ContributionSourceType == ContributionSourceType.StaticStat=> 
-                            ResolveContributionValue(contributionPayload, payloadInstance, true),
-
-                    _ => 0.0
-                };
-            }
-        }
-
         return accumulatedFlatValue;
     }
 
-    private double? ResolveFlatOverrideValue(StatState state, StatStateLane lane)
+    private double? ResolveFlatOverrideValue(StatState state, ReadOnlySpan<ValidPayloadContext> standardPayloads)
     {
-        double? flatOverrideValue = null;
-        bool hasFlatOverride = false;
+        double? largestFlatOverrideValue = null;
+        int flatOverrideCount = 0;
 
-        foreach (var payloadInstance in state.PrimaryInstances)
+        foreach (var context in standardPayloads)
         {
-            var footprint = _footprintHandler.Of(payloadInstance.PayloadId);
-            if (footprint.SetsDefault) continue;
-
-            if (_disabledDefaultIdCounts.ContainsKey(payloadInstance.PayloadId)) continue;
-            
-            var payloadData = _payloadRegistry.Get(payloadInstance.PayloadId).PayloadData;
-            if (!PassesContextCheck(payloadData)) continue;
-
-            if (payloadData is StatOverridePayload overridePayload && overridePayload.StatOverrideType == StatOverrideType.FlatOverride)
+            if (context.PayloadData is StatOverridePayload overridePayload && overridePayload.StatOverrideType == StatOverrideType.FlatOverride)
             {
-                if(hasFlatOverride)
-                {
-                    string statId = state.Id.ToString();
-                    var message = $"Stat '{statId}' has multiple flat overrides in primary instances. Overriding with the last one.";
-                    _errorConfig.ReportError(Source, message);
-                }
-
+                flatOverrideCount++;
                 double resolvedValue = overridePayload.SourceStatId is { } sourceStatId
-                    ? ResolveOverrideValue(overridePayload, sourceStatId) * payloadInstance.Primary
-                    : payloadInstance.Primary;
-                flatOverrideValue = resolvedValue;
-                hasFlatOverride = true; 
+                    ? ResolveOverrideSourceValue(overridePayload, sourceStatId) * context.Value
+                    : context.Value;
+
+                if (largestFlatOverrideValue is null || resolvedValue > largestFlatOverrideValue.Value) largestFlatOverrideValue = resolvedValue;
             }
         }
-        foreach (var payloadInstance in state.SecondaryInstances)
+
+        if (flatOverrideCount > 1)
         {
-            if (payloadInstance.Secondary is { } secondaryValue)
-            {
-                var footprint = _footprintHandler.Of(payloadInstance.PayloadId);
-
-                var payloadData = _payloadRegistry.Get(payloadInstance.PayloadId).PayloadData;
-                if (!PassesContextCheck(payloadData)) continue;
-
-                if (_disabledDefaultIdCounts.ContainsKey(payloadInstance.PayloadId)) continue;
-
-                if (payloadData is StatOverridePayload overridePayload && overridePayload.StatOverrideType == StatOverrideType.FlatOverride)
-                {
-                    if (hasFlatOverride)
-                    {
-                        string statId = state.Id.ToString();
-                        var message = $"Stat '{statId}' has multiple flat overrides in secondary instances. Overriding with the last one.";
-                        _errorConfig.ReportError(Source, message);
-                    }
-
-                    double resolvedValue = overridePayload.SourceStatId is { } sourceStatId
-                        ? ResolveOverrideValue(overridePayload, sourceStatId) * secondaryValue
-                        : secondaryValue;
-                    flatOverrideValue = resolvedValue;
-                    hasFlatOverride = true; 
-                }
-            }
+            string statId = state.Id.ToString();
+            var message = $"Stat '{statId}' has {flatOverrideCount} flat override instances. Applying the largest value ({largestFlatOverrideValue}).";
+            _errorConfig.ReportError(Source, message);
         }
 
-        return flatOverrideValue;
+        return largestFlatOverrideValue;
     }
 
-    private double ResolveDerivedFlatValue(StatState state)
+    private double ResolveDerivedFlatValue(StatState state, ReadOnlySpan<ValidPayloadContext> standardPayloads)
     {
         double accumulatedDerivedFlatValue = 0.0;
 
-        foreach (var payloadInstance in state.PrimaryInstances)
+        foreach (var context in standardPayloads)
         {
-            var footprint = _footprintHandler.Of(payloadInstance.PayloadId);
-            if (footprint.SetsDefault) continue;
-            
-            var payloadData = _payloadRegistry.Get(payloadInstance.PayloadId).PayloadData;
-            if (!PassesContextCheck(payloadData)) continue;
-
-            if (_disabledDefaultIdCounts.ContainsKey(payloadInstance.PayloadId)) continue;
-
-            accumulatedDerivedFlatValue += payloadData switch
+            accumulatedDerivedFlatValue += context.PayloadData switch
             {
                 StatTranslationPayload translationPayload when translationPayload.StatTranslationType == StatTranslationType.DerivationPreMultipliers => 
-                    ResolveDerivedValue(translationPayload, payloadInstance),
+                    ResolveDerivedSourceValue(translationPayload) * context.Value,
 
                 StatMirrorPayload mirrorPayload when  mirrorPayload.StatStaticType == StatStaticType.Flat => 
-                    ResolveMirrorValue(mirrorPayload, payloadInstance),
+                    ResolveMirrorSourceValue(mirrorPayload) * context.Value,
 
                 _ => 0.0,
             };
@@ -564,240 +533,140 @@ public sealed partial class StatsComponent
         return accumulatedDerivedFlatValue;
     }
 
-    private double ResolveConversionFlatValue(StatState state, StatResult currentStatResult)
+    private double ResolveConversionFlatValue(StatState state, StatResult currentStatResult, ReadOnlySpan<ValidPayloadContext> standardPayloads)
     {
         double accumulatedConversionFlatValue = 0.0;
 
-        foreach (var payloadInstance in state.PrimaryInstances)
+        foreach (var context in standardPayloads)
         {
-            var footprint = _footprintHandler.Of(payloadInstance.PayloadId);
-            if (footprint.SetsDefault) continue;
-            
-            var payloadData = _payloadRegistry.Get(payloadInstance.PayloadId).PayloadData;
-            if (!PassesContextCheck(payloadData)) continue;
-
-            if (_disabledDefaultIdCounts.ContainsKey(payloadInstance.PayloadId)) continue;
-
-            if (payloadData is StatTranslationPayload translationPayload &&  translationPayload.StatTranslationType == StatTranslationType.Conversion)
-                accumulatedConversionFlatValue += ResolveDerivedValue(translationPayload, payloadInstance);
+            if (context.PayloadData is StatTranslationPayload translationPayload &&  translationPayload.StatTranslationType == StatTranslationType.Conversion)
+                accumulatedConversionFlatValue += ResolveDerivedSourceValue(translationPayload) * context.Value;
         }
 
-        foreach (var payloadInstance in state.DrainInstances)
+        using var validPayloads = new PooledPayloadList(this);
+        GetValidPayloads(state, validPayloads.List, drainsOnly: true);
+        ReadOnlySpan<ValidPayloadContext> drainInstancePayloads = CollectionsMarshal.AsSpan(validPayloads.List);
+
+        foreach (var context in drainInstancePayloads)
         {
-            var footprint = _footprintHandler.Of(payloadInstance.PayloadId);
-            if (footprint.SetsDefault) continue;
-            
-            var payloadData = _payloadRegistry.Get(payloadInstance.PayloadId).PayloadData;
-            if (!PassesContextCheck(payloadData)) continue;
-
-            if (_disabledDefaultIdCounts.ContainsKey(payloadInstance.PayloadId)) continue;
-
-            if (payloadData is StatTranslationPayload translationPayload &&  translationPayload.StatTranslationType == StatTranslationType.Conversion)
-                accumulatedConversionFlatValue -= currentStatResult.DerivedPreConversionValue * payloadInstance.Primary;
+            if (context.PayloadData is StatTranslationPayload translationPayload && translationPayload.StatTranslationType == StatTranslationType.Conversion)
+                accumulatedConversionFlatValue -= currentStatResult.DerivedPreConversionValue * context.Value;
         }
 
         return accumulatedConversionFlatValue;
     }
 
-    private (double additive, double multiplicative) ResolveMultiplierValue(StatState state)
+    private (double additive, double multiplicative) ResolveMultiplierValue(StatState state, ReadOnlySpan<ValidPayloadContext> standardPayloads)
     {
-        double accumulatedAdditiveValue = 0.0;
-        double accumulatedMultiplicativeValue = 1.0;
+        double accumulatedRawAdditiveValue = 0.0;
+        double accumulatedRawMultiplicativeValue = 1.0;
 
-        foreach (var payloadInstance in state.PrimaryInstances)
+        foreach (var context in standardPayloads)
         {
-            var footprint = _footprintHandler.Of(payloadInstance.PayloadId);
-            if (footprint.SetsDefault) continue;
-            
-            var payloadData = _payloadRegistry.Get(payloadInstance.PayloadId).PayloadData;
-            if (!PassesContextCheck(payloadData)) continue;
-
-            if (_disabledDefaultIdCounts.ContainsKey(payloadInstance.PayloadId)) continue;
-
-            accumulatedAdditiveValue += payloadData switch
+            accumulatedRawAdditiveValue += context.PayloadData switch
             {
                 StatStaticPayload staticPayload when staticPayload.StatStaticType == StatStaticType.PercentAdditive =>
-                    payloadInstance.Primary,
-                
-                StatMirrorPayload mirrorPayload when mirrorPayload.StatStaticType == StatStaticType.PercentAdditive =>
-                    ResolveMirrorValue(mirrorPayload, payloadInstance),
+                    context.Value,
 
                 StatContributionPayload contributionPayload when contributionPayload.StatStaticType == StatStaticType.PercentAdditive 
-                    && contributionPayload.ContributionSourceType == ContributionSourceType.StaticStat=>
-                        ResolveContributionValue(contributionPayload, payloadInstance, false),
+                    && contributionPayload.ContributionSourceType == ContributionSourceType.StaticStat =>
+                        ResolveContributionSourceValue(contributionPayload) * context.Value,
 
                 _ => 0.0
             };
 
-            accumulatedMultiplicativeValue *= payloadData switch
+            accumulatedRawMultiplicativeValue *= 1.0 + context.PayloadData switch
             {
                 StatStaticPayload staticPayload when staticPayload.StatStaticType == StatStaticType.PercentMultiplicative =>
-                    1.0 + payloadInstance.Primary,
-
-                StatMirrorPayload mirrorPayload when mirrorPayload.StatStaticType == StatStaticType.PercentMultiplicative =>
-                    1.0 + ResolveMirrorValue(mirrorPayload, payloadInstance),
+                    context.Value,
 
                 StatContributionPayload contributionPayload when contributionPayload.StatStaticType == StatStaticType.PercentMultiplicative 
-                    && contributionPayload.ContributionSourceType == ContributionSourceType.StaticStat=>
-                        1.0 + ResolveContributionValue(contributionPayload, payloadInstance, true),
+                    && contributionPayload.ContributionSourceType == ContributionSourceType.StaticStat =>
+                        ResolveContributionSourceValue(contributionPayload) * context.Value,
 
-                _ => 1.0
+                _ => 0.0
             };
         }
 
-        foreach (var payloadInstance in state.SecondaryInstances)
-        {
-            if (payloadInstance.Secondary is { } secondaryValue)
-            {
-                var footprint = _footprintHandler.Of(payloadInstance.PayloadId);
-                if (footprint.SetsDefault) continue;
-            
-                var payloadData = _payloadRegistry.Get(payloadInstance.PayloadId).PayloadData;
-                if (!PassesContextCheck(payloadData)) continue;
-
-                if (_disabledDefaultIdCounts.ContainsKey(payloadInstance.PayloadId)) continue;
-
-                accumulatedAdditiveValue += payloadData switch
-                {
-                    StatStaticPayload staticPayload when staticPayload.StatStaticType == StatStaticType.PercentAdditive =>
-                        secondaryValue,
-                
-                    StatMirrorPayload mirrorPayload when mirrorPayload.StatStaticType == StatStaticType.PercentAdditive =>
-                        ResolveMirrorValue(mirrorPayload, payloadInstance),
-
-                    StatContributionPayload contributionPayload when contributionPayload.StatStaticType == StatStaticType.PercentAdditive 
-                        && contributionPayload.ContributionSourceType == ContributionSourceType.StaticStat =>
-                            ResolveContributionValue(contributionPayload, payloadInstance, false),
-
-                    _ => 0.0
-                };
-
-                accumulatedMultiplicativeValue *= payloadData switch
-                {
-                    StatStaticPayload staticPayload when staticPayload.StatStaticType == StatStaticType.PercentMultiplicative =>
-                        secondaryValue,
-
-                    StatMirrorPayload mirrorPayload when mirrorPayload.StatStaticType == StatStaticType.PercentMultiplicative =>
-                        ResolveMirrorValue(mirrorPayload, payloadInstance),
-
-                    StatContributionPayload contributionPayload when contributionPayload.StatStaticType == StatStaticType.PercentMultiplicative 
-                        && contributionPayload.ContributionSourceType == ContributionSourceType.StaticStat =>
-                            ResolveContributionValue(contributionPayload, payloadInstance, true),
-
-                    _ => 0.0
-                };
-            }
-        }
-
-        return (accumulatedAdditiveValue, accumulatedMultiplicativeValue);
+        return (accumulatedRawAdditiveValue, accumulatedRawMultiplicativeValue - 1.0);
     }
 
-    private double ResolveDerivedPostMultiplierValue(StatState state)
+    private (double additive, double multiplicative) ResolveMirroredMultiplierValue(StatState state, ReadOnlySpan<ValidPayloadContext> standardPayloads)
+    {
+        double accumulatedMirroredAdditiveValue = 0.0;
+        double accumulatedMirroredMultiplicativeValue = 1.0;
+
+        foreach (var context in standardPayloads)
+        {
+            if (context.PayloadData is StatMirrorPayload mirrorAdditivePayload &&  mirrorAdditivePayload.StatStaticType == StatStaticType.PercentAdditive)
+                accumulatedMirroredAdditiveValue += ResolveMirrorSourceValue(mirrorAdditivePayload) * context.Value;
+
+            if (context.PayloadData is StatMirrorPayload mirrorMultiplicativePayload &&  mirrorMultiplicativePayload.StatStaticType == StatStaticType.PercentMultiplicative)
+                accumulatedMirroredMultiplicativeValue *= 1.0 + ResolveMirrorSourceValue(mirrorMultiplicativePayload) * context.Value;
+        }
+
+        return (accumulatedMirroredAdditiveValue, accumulatedMirroredMultiplicativeValue - 1.0);
+    }
+
+    private double ResolveDerivedPostMultiplierValue(StatState state, StatResult currentStatResult, ReadOnlySpan<ValidPayloadContext> standardPayloads)
     {
         double accumulatedDerivedPostMultiplierValue = 0.0;
 
-        foreach (var payloadInstance in state.PrimaryInstances)
+        foreach (var context in standardPayloads)
         {
-            var footprint = _footprintHandler.Of(payloadInstance.PayloadId);
-            if (footprint.SetsDefault) continue;
-            
-            var payloadData = _payloadRegistry.Get(payloadInstance.PayloadId).PayloadData;
-            if (!PassesContextCheck(payloadData)) continue;
-
-            if (_disabledDefaultIdCounts.ContainsKey(payloadInstance.PayloadId)) continue;
-
-            if (payloadData is StatTranslationPayload translationPayload &&  translationPayload.StatTranslationType == StatTranslationType.DerivationPostMultipliers)
-                accumulatedDerivedPostMultiplierValue += ResolveDerivedValue(translationPayload, payloadInstance);
+            if (context.PayloadData is StatTranslationPayload translationPayload &&  translationPayload.StatTranslationType == StatTranslationType.DerivationPostMultipliers)
+                accumulatedDerivedPostMultiplierValue += ResolveDerivedSourceValue(translationPayload) * context.Value;
         }
+
+        accumulatedDerivedPostMultiplierValue *= (1.0 + currentStatResult.MirroredAdditiveMultiplier) * (1.0 + currentStatResult.MirroredMultiplicativeMultiplier);
 
         return accumulatedDerivedPostMultiplierValue;
     }
 
-    private double ResolveDerivedResolvedValue(StatState state)
+    private double ResolveDerivedResolvedValue(StatState state, StatResult currentStatResult, ReadOnlySpan<ValidPayloadContext> standardPayloads)
     {
         double accumulatedDerivedFinalValue = 0.0;
 
-        foreach (var payloadInstance in state.PrimaryInstances)
+        foreach (var context in standardPayloads)
         {
-            var footprint = _footprintHandler.Of(payloadInstance.PayloadId);
-            if (footprint.SetsDefault) continue;
-            
-            var payloadData = _payloadRegistry.Get(payloadInstance.PayloadId).PayloadData;
-            if (!PassesContextCheck(payloadData)) continue;
-
-            if (_disabledDefaultIdCounts.ContainsKey(payloadInstance.PayloadId)) continue;
-
-            if (payloadData is StatTranslationPayload translationPayload &&  translationPayload.StatTranslationType == StatTranslationType.DerivationLast)
-                accumulatedDerivedFinalValue += ResolveDerivedValue(translationPayload, payloadInstance);
+            if (context.PayloadData is StatTranslationPayload translationPayload &&  translationPayload.StatTranslationType == StatTranslationType.DerivationLast)
+                accumulatedDerivedFinalValue += ResolveDerivedSourceValue(translationPayload) * context.Value;
         }
+
+        accumulatedDerivedFinalValue *= (1.0 + currentStatResult.MirroredAdditiveMultiplier) * (1.0 + currentStatResult.MirroredMultiplicativeMultiplier);
 
         return accumulatedDerivedFinalValue;
     }
 
-    private double? ResolveFinalOverrideValue(StatState state, StatStateLane lane)
+    private double? ResolveFinalOverrideValue(StatState state, ReadOnlySpan<ValidPayloadContext> standardPayloads)
     {
-        double? finalOverrideValue = null;
-        bool hasFinalOverride = false;
+        double? largestFinalOverrideValue = null;
+        int finalOverrideCount = 0;
 
-        foreach (var payloadInstance in state.PrimaryInstances)
+        foreach (var context in standardPayloads)
         {
-            var footprint = _footprintHandler.Of(payloadInstance.PayloadId);
-            if (footprint.SetsDefault) continue;
-            
-            var payloadData = _payloadRegistry.Get(payloadInstance.PayloadId).PayloadData;
-            if (!PassesContextCheck(payloadData)) continue;
-
-            if (_disabledDefaultIdCounts.ContainsKey(payloadInstance.PayloadId)) continue;
-
-            if (payloadData is StatOverridePayload overridePayload && overridePayload.StatOverrideType == StatOverrideType.FinalOverride)
+            if (context.PayloadData is StatOverridePayload overridePayload && overridePayload.StatOverrideType == StatOverrideType.FinalOverride)
             {
-                if(hasFinalOverride)
-                {
-                    string statId = state.Id.ToString();
-                    var message = $"Stat '{statId}' has multiple final overrides in primary instances. Overriding with the last one.";
-                    _errorConfig.ReportError(Source, message);
-                }
-
+                finalOverrideCount++;
                 double resolvedValue = overridePayload.SourceStatId is { } sourceStatId
-                    ? ResolveOverrideValue(overridePayload, sourceStatId) * payloadInstance.Primary
-                    : payloadInstance.Primary;
-                finalOverrideValue = resolvedValue;
-                hasFinalOverride = true; 
+                    ? ResolveOverrideSourceValue(overridePayload, sourceStatId) * context.Value
+                    : context.Value;
+
+                if (largestFinalOverrideValue is null || resolvedValue > largestFinalOverrideValue.Value) largestFinalOverrideValue = resolvedValue;
             }
         }
-        foreach (var payloadInstance in state.SecondaryInstances)
+
+        if (finalOverrideCount > 1)
         {
-            if (payloadInstance.Secondary is { } secondaryValue)
-            {
-                var footprint = _footprintHandler.Of(payloadInstance.PayloadId);
-
-                var payloadData = _payloadRegistry.Get(payloadInstance.PayloadId).PayloadData;
-                if (!PassesContextCheck(payloadData)) continue;
-
-                if (_disabledDefaultIdCounts.ContainsKey(payloadInstance.PayloadId)) continue;
-
-                if (payloadData is StatOverridePayload overridePayload && overridePayload.StatOverrideType == StatOverrideType.FinalOverride)
-                {
-                    if (hasFinalOverride)
-                    {
-                        string statId = state.Id.ToString();
-                        var message = $"Stat '{statId}' has multiple final overrides in secondary instances. Overriding with the last one.";
-                        _errorConfig.ReportError(Source, message);
-                    }
-
-                    double resolvedValue = overridePayload.SourceStatId is { } sourceStatId
-                        ? ResolveOverrideValue(overridePayload, sourceStatId) * secondaryValue
-                        : secondaryValue;
-                    finalOverrideValue = resolvedValue;
-                    hasFinalOverride = true; 
-                }
-            }
+            string statId = state.Id.ToString();
+            var message = $"Stat '{statId}' has {finalOverrideCount} final override instances. Applying the largest value ({largestFinalOverrideValue}).";
+            _errorConfig.ReportError(Source, message);
         }
 
-        return finalOverrideValue;
+        return largestFinalOverrideValue;
     }
 
-    private double ResolveOverrideValue(StatOverridePayload overridePayload, StatId sourceStatId)
+    private double ResolveOverrideSourceValue(StatOverridePayload overridePayload, StatId sourceStatId)
     {
         var (laneA, laneB) = GetStatResultsAcrossLanes(sourceStatId);
 
@@ -809,18 +678,16 @@ public sealed partial class StatsComponent
         };
     }
 
-    private double ResolveContributionValue(StatContributionPayload contributionPayload, StatPayloadInstance payloadInstance, bool isSecondary)
+    private double ResolveContributionSourceValue(StatContributionPayload contributionPayload)
     {
         var (laneA, laneB) = GetStatResultsAcrossLanes(contributionPayload.SourceStatId);
 
         double sourceValue = AverageLanes(laneA.FlatTotalValue, laneB?.FlatTotalValue);
 
-        double coefficient = isSecondary ? (payloadInstance.Secondary ?? 0.0) : payloadInstance.Primary;
-
-        return sourceValue * coefficient;
+        return sourceValue;
     }
 
-    private double ResolveDerivedValue(StatTranslationPayload translationPayload, StatPayloadInstance payloadInstance)
+    private double ResolveDerivedSourceValue(StatTranslationPayload translationPayload)
     {
         var (laneA, laneB) = GetStatResultsAcrossLanes(translationPayload.SourceStatId);
         
@@ -837,25 +704,25 @@ public sealed partial class StatsComponent
             _ => 0.0
         };
 
-        return sourceValue * payloadInstance.Primary;
+        return sourceValue;
     }
 
-    private double ResolveMirrorValue(StatMirrorPayload mirrorPayload, StatPayloadInstance payloadInstance)
+    private double ResolveMirrorSourceValue(StatMirrorPayload mirrorPayload)
     {
         var (laneA, laneB) = GetStatResultsAcrossLanes(mirrorPayload.SourceStatId);
 
         double sourceValue = mirrorPayload.StatStaticType switch
         {
-            StatStaticType.Flat => AverageLanes(laneA.AddedFlat, laneB?.AddedFlat),
+            StatStaticType.Flat => AverageLanes(laneA.RawAddedFlat, laneB?.RawAddedFlat),
 
-            StatStaticType.PercentAdditive => AverageLanes(laneA.AdditiveMultiplier, laneB?.AdditiveMultiplier),
+            StatStaticType.PercentAdditive => AverageLanes(laneA.RawAdditiveMultiplier, laneB?.RawAdditiveMultiplier),
 
-            StatStaticType.PercentMultiplicative => AverageLanes(laneA.MultiplicativeMultiplier, laneB?.MultiplicativeMultiplier),
+            StatStaticType.PercentMultiplicative => AverageLanes(laneA.RawMultiplicativeMultiplier, laneB?.RawMultiplicativeMultiplier),
 
             _ => 0.0
         };
 
-        return sourceValue * payloadInstance.Primary;
+        return sourceValue;
     }
 
     private bool PassesContextCheck(IPayload payload)

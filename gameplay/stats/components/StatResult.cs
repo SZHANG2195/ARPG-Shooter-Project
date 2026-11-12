@@ -9,9 +9,11 @@ public sealed partial class StatsComponent
 		double PostMultiplierValue,
 		double ResolvedValue,
 		double FinalValue,
-		double AddedFlat = 0,
-		double AdditiveMultiplier = 0,
-		double MultiplicativeMultiplier = 1)
+		double RawAddedFlat = 0,
+		double RawAdditiveMultiplier = 0,
+		double RawMultiplicativeMultiplier = 0,
+		double MirroredAdditiveMultiplier = 0,
+		double MirroredMultiplicativeMultiplier = 0)
 	{
     	public static StatResult Seed(double baseValue) => new(
         	BaseValue: baseValue,
@@ -21,9 +23,11 @@ public sealed partial class StatsComponent
         	PostMultiplierValue: baseValue,
         	ResolvedValue: baseValue,
         	FinalValue: baseValue,
-        	AddedFlat: 0,
-        	AdditiveMultiplier: 0,
-        	MultiplicativeMultiplier: 1
+        	RawAddedFlat: 0,
+        	RawAdditiveMultiplier: 0,
+        	RawMultiplicativeMultiplier: 0,
+			MirroredAdditiveMultiplier: 0,
+			MirroredMultiplicativeMultiplier: 0
     	);
 		public StatResult ApplyFlatValue(double addedFlatValue)
 		{
@@ -31,7 +35,7 @@ public sealed partial class StatsComponent
 
 			return this with
 			{
-				AddedFlat = addedFlatValue,
+				RawAddedFlat = addedFlatValue,
 				FlatTotalValue = newFlatTotal,
 				DerivedPreConversionValue = newFlatTotal,
 				PreMultiplierValue = newFlatTotal,
@@ -81,14 +85,25 @@ public sealed partial class StatsComponent
 			};
 		}
 
-		public StatResult ApplyMultiplierValue(double additiveMultiplierValue, double multiplicativeMultiplierValue)
+		public StatResult ApplyRawMultiplierValue(double rawAdditiveMultiplierValue, double rawMultiplicativeMultiplierValue)
 		{
-			double newPostMultiplierValue = PreMultiplierValue * (1.0 + additiveMultiplierValue) * multiplicativeMultiplierValue;
+			return this with
+			{
+				RawAdditiveMultiplier = rawAdditiveMultiplierValue,
+				RawMultiplicativeMultiplier = rawMultiplicativeMultiplierValue
+			};
+		}
+
+		public StatResult ApplyMirroredMultiplierValue(double mirroredAdditiveMultiplierValue, double mirroredMultiplicativeMultiplierValue)
+		{
+			double newMirroredMultiplierValue = RawAdditiveMultiplier + mirroredAdditiveMultiplierValue;
+			double newMirroredMultiplicativeMultiplierValue = (1.0 + RawMultiplicativeMultiplier) * (1.0 + mirroredMultiplicativeMultiplierValue) - 1.0;
+			double newPostMultiplierValue = PreMultiplierValue * (1.0 + newMirroredMultiplierValue) * (1.0 + newMirroredMultiplicativeMultiplierValue);
 
 			return this with
 			{
-				AdditiveMultiplier = additiveMultiplierValue,
-				MultiplicativeMultiplier = multiplicativeMultiplierValue,
+				MirroredAdditiveMultiplier = newMirroredMultiplierValue,
+        		MirroredMultiplicativeMultiplier = newMirroredMultiplicativeMultiplierValue,
 				PostMultiplierValue = newPostMultiplierValue,
 				ResolvedValue = newPostMultiplierValue,
 				FinalValue = newPostMultiplierValue
