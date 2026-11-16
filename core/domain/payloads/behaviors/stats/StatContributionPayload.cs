@@ -5,7 +5,7 @@ using lethal.core.domain.stats;
 using lethal.core.domain.tags;
 
 namespace lethal.core.domain.payloads;
-public sealed record StatContributionPayload : IPayload, IContextualPayload, IDefaultDisablingPayload
+public sealed record StatContributionPayload : IPayload, IContextualPayload, IDefaultDisablingPayload, ITargetRequirementPayload, ISourceRequirementPayload
 {
 	public required ContributionSourceType ContributionSourceType { get; init; }
     public required StatStaticType StatStaticType { get; init; }
@@ -14,6 +14,8 @@ public sealed record StatContributionPayload : IPayload, IContextualPayload, IDe
     public StatId? TargetStatId { get; init; }
 	public required StatId SourceStatId { get; init; }
 	public TagFilter TargetTags { get; init; } = TagFilter.Empty;
+    public TagFilter TargetRequirementTags { get; init; } = TagFilter.Empty;
+    public TagFilter SourceRequirementTags { get; init; } = TagFilter.Empty;
     public ImmutableArray<TagId> ExcludedTags { get; init; } = ImmutableArray<TagId>.Empty;
     public bool TargetWithoutCounterpart { get; init; } = false;
     public required double PrimaryMinValue { get; init; }

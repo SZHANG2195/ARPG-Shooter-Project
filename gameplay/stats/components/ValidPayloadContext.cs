@@ -10,6 +10,7 @@ public sealed partial class StatsComponent
     	public IPayload PayloadData { get; init; }
     	public double Value { get; init; }
     	public bool IsSecondary { get; init; }
+		public bool SetsDefault { get; init; }
 	}
 }
 

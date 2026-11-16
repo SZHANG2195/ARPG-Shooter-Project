@@ -49,4 +49,9 @@ public sealed class TagSet
 
     public bool Matches(TagFilter filter, ImmutableArray<TagId> excluded) =>
         Satisfies(filter) && ContainsNone(excluded);
+    
+    public bool IsEmpty => _tags.Count == 0;
+    
+    public static bool IsNullOrEmpty(TagSet? tagSet) => 
+        tagSet is null || tagSet.IsEmpty;
 }

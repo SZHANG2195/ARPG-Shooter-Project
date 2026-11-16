@@ -9,11 +9,13 @@ public sealed partial class StatsComponent
 		double PostMultiplierValue,
 		double ResolvedValue,
 		double FinalValue,
-		double RawAddedFlat = 0,
-		double RawAdditiveMultiplier = 0,
-		double RawMultiplicativeMultiplier = 0,
-		double MirroredAdditiveMultiplier = 0,
-		double MirroredMultiplicativeMultiplier = 0)
+		double RawAddedFlat = 0.0,
+		double RawAdditiveMultiplier = 0.0,
+		double RawMultiplicativeMultiplier = 0.0,
+		double TotalAdditiveMultiplier = 0.0,
+		double TotalMultiplicativeMultiplier = 0.0,
+		double TotalConversionDrainRatio = 0.0,
+		double ConversionNormalizationRatio = 1.0)
 	{
     	public static StatResult Seed(double baseValue) => new(
         	BaseValue: baseValue,
@@ -22,12 +24,7 @@ public sealed partial class StatsComponent
         	PreMultiplierValue: baseValue,
         	PostMultiplierValue: baseValue,
         	ResolvedValue: baseValue,
-        	FinalValue: baseValue,
-        	RawAddedFlat: 0,
-        	RawAdditiveMultiplier: 0,
-        	RawMultiplicativeMultiplier: 0,
-			MirroredAdditiveMultiplier: 0,
-			MirroredMultiplicativeMultiplier: 0
+        	FinalValue: baseValue
     	);
 		public StatResult ApplyFlatValue(double addedFlatValue)
 		{
@@ -72,25 +69,41 @@ public sealed partial class StatsComponent
 			};
 		}
 
-		public StatResult ApplyConvertedValue(double convertedFlatValue)
+		public StatResult ApplyConversionSubtractedValue(double conversionSubtractedFlatValue, double conversionDrainRatio, double conversionNormalizationRatio)
 		{
-			double newConvertedValue = DerivedPreConversionValue + convertedFlatValue;
+			double newConvertedSubtractedValue = DerivedPreConversionValue + conversionSubtractedFlatValue;
 
 			return this with
 			{
-				PreMultiplierValue = newConvertedValue,
-				PostMultiplierValue = newConvertedValue,
-				ResolvedValue = newConvertedValue,
-				FinalValue = newConvertedValue
+				TotalConversionDrainRatio = conversionDrainRatio,
+				ConversionNormalizationRatio = conversionNormalizationRatio,
+				PreMultiplierValue = newConvertedSubtractedValue,
+				PostMultiplierValue = newConvertedSubtractedValue,
+				ResolvedValue = newConvertedSubtractedValue,
+				FinalValue = newConvertedSubtractedValue
 			};
 		}
 
-		public StatResult ApplyRawMultiplierValue(double rawAdditiveMultiplierValue, double rawMultiplicativeMultiplierValue)
+		public StatResult ApplyConversionGainedValue(double conversionGainedFlatValue)
 		{
+			double newConvertedGainedValue = PreMultiplierValue + conversionGainedFlatValue;
+
+			return this with
+			{
+				PreMultiplierValue = newConvertedGainedValue,
+				PostMultiplierValue = newConvertedGainedValue,
+				ResolvedValue = newConvertedGainedValue,
+				FinalValue = newConvertedGainedValue
+			};
+		}
+
+		public StatResult ApplyRawMultiplierValue(double rawAdditiveMultiplierValue, double rawMultiplicativeMultiplierValue, double scopedMultiplicativeMultiplierValue)
+		{
+			double totalRawMultiplicativeMultiplierValue = (1.0 + rawMultiplicativeMultiplierValue) * (1.0 + scopedMultiplicativeMultiplierValue);
 			return this with
 			{
 				RawAdditiveMultiplier = rawAdditiveMultiplierValue,
-				RawMultiplicativeMultiplier = rawMultiplicativeMultiplierValue
+				RawMultiplicativeMultiplier = totalRawMultiplicativeMultiplierValue
 			};
 		}
 
@@ -102,11 +115,23 @@ public sealed partial class StatsComponent
 
 			return this with
 			{
-				MirroredAdditiveMultiplier = newMirroredMultiplierValue,
-        		MirroredMultiplicativeMultiplier = newMirroredMultiplicativeMultiplierValue,
+				TotalAdditiveMultiplier = newMirroredMultiplierValue,
+        		TotalMultiplicativeMultiplier = newMirroredMultiplicativeMultiplierValue,
 				PostMultiplierValue = newPostMultiplierValue,
 				ResolvedValue = newPostMultiplierValue,
 				FinalValue = newPostMultiplierValue
+			};
+		}
+
+		public StatResult ApplyTargetScopedValue(double scopedDelta)
+		{
+			double newScopedPostMultiplierValue = PostMultiplierValue + scopedDelta;
+
+			return this with
+			{
+				PostMultiplierValue = newScopedPostMultiplierValue,
+				ResolvedValue = newScopedPostMultiplierValue,
+				FinalValue = newScopedPostMultiplierValue
 			};
 		}
 

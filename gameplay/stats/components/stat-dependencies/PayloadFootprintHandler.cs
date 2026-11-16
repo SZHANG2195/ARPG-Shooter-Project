@@ -82,14 +82,14 @@ public sealed class PayloadFootprintHandler
     private ImmutableArray<StatId> Resolve(PayloadId id, StatId? statId, TagFilter tags, ImmutableArray<TagId> excluded)
 	{
 		var matched = ImmutableArray.CreateBuilder<StatId>();
-
-		if (statId is {} explicitTarget)
+ 
+		if (statId is { } explicitTarget)
 		{
 			if (!_stats.Contains(explicitTarget))  throw new InvalidOperationException($"[{Source}]: Payload '{id}' targets unknown stat '{explicitTarget}'.");
 			matched.Add(explicitTarget);
 		}
 
-		if (!tags.All.IsDefaultOrEmpty || !tags.Any.IsDefaultOrEmpty)
+		if (!tags.IsEmpty)
     	{
         	foreach (var statEntry in _stats.All)
         	{
@@ -117,7 +117,7 @@ public sealed class PayloadFootprintHandler
 		ImmutableArray<(StatId StatId, EdgeKind Kind)> reads)
 	{
     	var writes = Resolve(id, statId, tags, excluded);
-    	bool noTags = tags.All.IsDefaultOrEmpty && tags.Any.IsDefaultOrEmpty;
+    	bool noTags = tags.IsEmpty;
 
     	if (hasSecondary && (withoutCounterpart || statId is null || !noTags)) throw new InvalidOperationException(
             $"[{Source}]: Payload '{id}': secondary values need one explicit stat, no tags, and no 'without counterpart' flag.");

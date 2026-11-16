@@ -7,7 +7,7 @@ public sealed partial class StatsComponent
 {
 	private sealed class StatState
     {
-        public StatId Id;
+        public readonly StatId Id;
         
         public readonly List<StatPayloadInstance> PrimaryInstances = new();
         public readonly List<StatPayloadInstance> SecondaryInstances = new();
@@ -16,8 +16,12 @@ public sealed partial class StatsComponent
 
         public readonly double OriginalBaseValue;
         public double? DefaultOverrideValue;
+        public double? FlatOverrideValue;
+        public double? FinalOverrideValue;
         public StatLaneResult Default;
         public StatLaneResult[]? Lanes;
+
+        public int LanePushCount;
 
         public StatState(StatId id, double originalBaseValue)
         {
@@ -49,10 +53,7 @@ public sealed partial class StatsComponent
                 Default.IsDirty = true;
                 return;
             }
-
-            int laneIndex = (int)lane - 1;
-            Lanes ??= new StatLaneResult[2];
-            Lanes[laneIndex].IsDirty = true;
+            EnsureLanes()[(int)lane - 1].IsDirty = true;
         }
 
         public bool IsAnyDirty()
@@ -81,5 +82,27 @@ public sealed partial class StatsComponent
     
             return true;
         }
+
+        public StatLaneResult[] EnsureLanes()
+        {
+            if (Lanes is null)
+            {
+                Lanes = new StatLaneResult[2];
+                for (int i = 0; i < Lanes.Length; i++) Lanes[i].IsDirty = true;
+            }
+            return Lanes;
+        }
+
+        public bool HasNoModifiers =>
+            PrimaryInstances.Count == 0 && 
+            SecondaryInstances.Count == 0 && 
+            DrainInstances.Count == 0 && 
+            SourceValues.Count == 0;
+
+        public bool HasOnlySourceValues =>
+            PrimaryInstances.Count == 0 && 
+            SecondaryInstances.Count == 0 && 
+            DrainInstances.Count == 0 && 
+            SourceValues.Count > 0;
     }
 }

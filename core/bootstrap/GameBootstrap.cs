@@ -6,6 +6,7 @@ using lethal.core.services;
 using lethal.common.registries;
 using lethal.core.domain.localizations;
 using lethal.core.tools;
+using System.Diagnostics;
 
 namespace lethal.core.bootstrap;
 public sealed record BootstrapResult(GameData Data, ILocalizationKeys LocalizationKeys);
@@ -18,6 +19,9 @@ public partial class GameBootstrap : Node
     public override async void _Ready()
     {
         GD.Print($"[{Source}]: Initializing...");
+
+        var stopwatch = Stopwatch.StartNew();
+
         try
         {
             var globalConfig = new ErrorConfig(
@@ -37,14 +41,16 @@ public partial class GameBootstrap : Node
                 GameDataSmokeTest.Run(data);
                 StatsComponentSmokeTest.Run(data, globalConfig);
             }
+            stopwatch.Stop();
 
             BootstrapReady.TrySetResult(new BootstrapResult(data, keys));
-            GD.Print($"[{Source}]: Loading complete.");
+            GD.Print($"[{Source}]: Loading complete in {stopwatch.ElapsedMilliseconds} ms ({stopwatch.Elapsed.TotalSeconds:F2}s).");
         }
-        catch (Exception ex)
+        catch (Exception exception)
         {
-            GD.PrintErr($"[{Source}]: Bootstrap failed: {ex}");
-            BootstrapReady.TrySetException(ex);
+            stopwatch.Stop();
+            GD.PrintErr($"[{Source}]: Bootstrap failed after {stopwatch.ElapsedMilliseconds} ms: {exception}");
+            BootstrapReady.TrySetException(exception);
         }
     }
 }

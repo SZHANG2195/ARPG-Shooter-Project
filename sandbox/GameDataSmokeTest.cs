@@ -27,7 +27,7 @@ public static class GameDataSmokeTest
 
         // Group index covers everything
         Check(d.Payloads.InGroup(PayloadBehaviorGroup.Stat).Length
-            + d.Payloads.InGroup(PayloadBehaviorGroup.Effectiveness).Length == 63, "every payload is in a group");
+            + d.Payloads.InGroup(PayloadBehaviorGroup.Effectiveness).Length == 64, "every payload is in a group");
 
         // Status tags (7 of your 11 effects carry status.affliction)
         Check(d.StatusEffects.All.Count(s => d.StatusEffects.IsAffliction(s.Id)) == 7, "affliction count");

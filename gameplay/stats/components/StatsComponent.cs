@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Runtime.InteropServices;
 using lethal.common.registries.payloads;
 using lethal.common.registries.tags;
@@ -24,7 +25,6 @@ public sealed partial class StatsComponent
     private readonly PayloadFootprintHandler _footprintHandler;
     private readonly PayloadRegistry _payloadRegistry;
     private readonly HashSet<StatId> _scratch = new();
-    private readonly Stack<List<ValidPayloadContext>> _validPayloadPool = new();
 
     private const string Source = nameof(StatsComponent);
 
@@ -68,7 +68,7 @@ public sealed partial class StatsComponent
         return new StatsComponent(resolvedBaseStats, statGraph, errorConfig, footprintHandler, payloadRegistry);
     }
 
-    public bool InstallSource(PayloadSourceHandle sourceHandle, TagSet sourceTags, IEnumerable<StatPayloadInstance> payloadInstances, IEnumerable<StatSourceValue> sourceValues)
+    public bool InstallSource(PayloadSourceHandle sourceHandle, TagSet sourceTags, IReadOnlyList<StatPayloadInstance> payloadInstances, IReadOnlyList<StatSourceValue> sourceValues)
     {
         foreach (var instance in payloadInstances) _footprintHandler.Of(instance.PayloadId);
 
@@ -87,7 +87,7 @@ public sealed partial class StatsComponent
         foreach (var payloadInstance in payloadInstances)
         {
             var definition = _payloadRegistry.Get(payloadInstance.PayloadId);
-            if (definition.PayloadData is IDefaultDisablingPayload disablingPayload && !disablingPayload.DisabledDefaultIds.IsDefaultOrEmpty)
+            if (definition.PayloadData is IDefaultDisablingPayload { DisabledDefaultIds.IsDefaultOrEmpty : false }disablingPayload)
             {
                 foreach (var disabledId in disablingPayload.DisabledDefaultIds)
                 {
@@ -99,7 +99,7 @@ public sealed partial class StatsComponent
 
         foreach (var sourceValue in sourceValues)
         {
-            InstallSourceValue(sourceEntry, sourceValue);
+            InstallSourceValue(sourceEntry, sourceValue with { SourceHandle = sourceHandle, SourceTags = sourceTags });
         }
 
         return true;
@@ -140,6 +140,7 @@ public sealed partial class StatsComponent
         state.SourceValues.Add(sourceValue);
         sourceEntry.PushedKeys.Add((sourceValue.Stat, sourceValue.Lane));
 
+        if (sourceValue.Lane != StatStateLane.Default) state.LanePushCount++;
         if (sourceValue.Lane == StatStateLane.Default) MarkDirty(sourceValue.Stat);
         else MarkLaneDirty(sourceValue.Stat, sourceValue.Lane);
     }
@@ -152,15 +153,6 @@ public sealed partial class StatsComponent
         {
             var footprint = _footprintHandler.Of(payloadInstance.PayloadId);
             _statGraph.Remove(payloadInstance.PayloadId, footprint);
-
-            var definition = _payloadRegistry.Get(payloadInstance.PayloadId);
-            if (definition.PayloadData is IDefaultDisablingPayload disablingPayload && !disablingPayload.DisabledDefaultIds.IsDefaultOrEmpty)
-            {
-                foreach (var disabledId in sourceEntry.AppliedDisables)
-                {
-                    Enable(disabledId); 
-                }
-            }
 
             foreach (var stat in footprint.PrimaryWrites)   
             { 
@@ -184,10 +176,13 @@ public sealed partial class StatsComponent
 
         foreach (var (stat, lane) in sourceEntry.PushedKeys)
         {
-            _states[stat].SourceValues.RemoveAll(v => v.SourceHandle == sourceHandle && v.Lane == lane);
+            int removed = _states[stat].SourceValues.RemoveAll(sourceValue => sourceValue.SourceHandle == sourceHandle && sourceValue.Lane == lane);
+            if (lane != StatStateLane.Default) _states[stat].LanePushCount -= removed;
             if (lane == StatStateLane.Default) MarkDirty(stat);
             else MarkLaneDirty(stat, lane);
         }
+
+        foreach (var disabledId in sourceEntry.AppliedDisables) Enable(disabledId);
 
         return true;
     }
@@ -261,6 +256,8 @@ public sealed partial class StatsComponent
     {
         var state = _states[statId];
 
+        if (lane != StatStateLane.Default && state.LanePushCount == 0) lane = StatStateLane.Default;
+
         ref var laneResult = ref GetLaneResult(state, lane);
         if (laneResult.IsDirty) 
         {
@@ -275,12 +272,7 @@ public sealed partial class StatsComponent
     {
         if (lane == StatStateLane.Default) return ref state.Default;
 
-        if (state.Lanes is null)
-        {
-            state.Lanes = new StatLaneResult[2];
-            for (int i = 0; i < state.Lanes.Length; i++) state.Lanes[i].IsDirty = true;
-        }
-        return ref state.Lanes[(int)lane - 1];
+        return ref state.EnsureLanes()[(int)lane - 1];
     }
 
     private (StatResult LaneA, StatResult? LaneB) GetStatResultsAcrossLanes(StatId sourceStatId)
@@ -301,101 +293,165 @@ public sealed partial class StatsComponent
         }
     }
 
-    private void GetValidPayloads(StatState state, List<ValidPayloadContext> results,bool checkSetsDefault = true, bool drainsOnly = false)
+    private (double laneA, double? laneB) GetValidSourceValueSum(StatState sourceState, TagFilter requirementFilter, ImmutableArray<TagId> excludedTags)
     {
+        double laneASourceValue = 0.0;
+        double? laneBSourceValue = null;
+
+        bool isDualWielding = false;
+        if (isDualWielding)
+        {
+            laneBSourceValue = 0.0;
+            foreach (var sourceValue in sourceState.SourceValues)
+            {
+                if (sourceValue.SourceTags is { IsEmpty: false } tags && tags.Matches(requirementFilter, excludedTags))
+                {
+                    if (sourceValue.Lane == StatStateLane.Mainhand) laneASourceValue += sourceValue.Value;
+                    else if (sourceValue.Lane == StatStateLane.Offhand) laneBSourceValue += sourceValue.Value;
+                    else 
+                    { 
+                        laneASourceValue += sourceValue.Value; 
+                        laneBSourceValue += sourceValue.Value; 
+                    }
+                }
+            }
+        }
+        else
+        {
+            foreach (var sourceValue in sourceState.SourceValues)
+            {
+                if (sourceValue.SourceTags is { IsEmpty: false } tags && tags.Matches(requirementFilter, excludedTags))
+                {
+                    if (sourceValue.Lane == StatStateLane.Default)
+                    {
+                        laneASourceValue += sourceValue.Value;
+                    }
+                }
+            }
+        }
+
+        return (laneASourceValue, laneBSourceValue);
+    }
+
+
+
+    private void GetValidPayloads(
+        StatState state, 
+        List<ValidPayloadContext> standard, 
+        List<ValidPayloadContext>? scoped, 
+        bool drainsOnly = false)
+    {
+        void ProcessInstance(StatPayloadInstance instance, List<ValidPayloadContext> standard, List<ValidPayloadContext>? scoped, bool isSecondary)
+        {
+            if (IsDisabled(instance)) return;
+
+            var footprint = _footprintHandler.Of(instance.PayloadId);
+
+            var payloadData = _payloadRegistry.Get(instance.PayloadId).PayloadData;
+            if (!PassesContextCheck(payloadData)) return;
+
+            bool hasRequirements = HasAnyRequirements(payloadData);
+
+            double value = isSecondary && (payloadData is StatStaticPayload or StatOverridePayload or StatContributionPayload)
+                ? (instance.Secondary ?? instance.Primary)
+                : instance.Primary;
+            
+            var context = new ValidPayloadContext 
+            { 
+                Instance = instance, 
+                PayloadData = payloadData, 
+                Value = value, 
+                IsSecondary = isSecondary,
+                SetsDefault = footprint.SetsDefault 
+            };
+
+            if (hasRequirements) scoped?.Add(context); 
+            else standard.Add(context);
+        }
+
+        bool HasAnyRequirements(IPayload payloadData)
+        {
+            if (payloadData is ITargetRequirementPayload { TargetRequirementTags.IsEmpty: false } targetRequirement) return true;
+            if (payloadData is ISourceRequirementPayload { SourceRequirementTags.IsEmpty: false } sourceRequirement) return true;
+            return false;
+        }
+
         if (drainsOnly)
         {
             foreach (var instance in state.DrainInstances)
             {
-                if (IsDisabled(instance)) continue;
-
-                var footprint = _footprintHandler.Of(instance.PayloadId);
-                if (footprint.SetsDefault) continue;
-
-                var payloadData = _payloadRegistry.Get(instance.PayloadId).PayloadData;
-                if (!PassesContextCheck(payloadData)) continue;
-
-                results.Add(new ValidPayloadContext 
-                { 
-                    Instance = instance, 
-                    PayloadData = payloadData, 
-                    Value = instance.Primary, 
-                    IsSecondary = false 
-                });
+                ProcessInstance(instance, standard, scoped, isSecondary: false);
             }
             return;
         }
         foreach (var instance in state.PrimaryInstances)
         {
-            if (IsDisabled(instance)) continue;
-
-            var footprint = _footprintHandler.Of(instance.PayloadId);
-            if (checkSetsDefault && footprint.SetsDefault) continue;
-
-            var payloadData = _payloadRegistry.Get(instance.PayloadId).PayloadData;
-            if (!PassesContextCheck(payloadData)) continue;
-
-            results.Add(new ValidPayloadContext 
-            { 
-                Instance = instance, 
-                PayloadData = payloadData, 
-                Value = instance.Primary, 
-                IsSecondary = false 
-            });
+            ProcessInstance(instance, standard, scoped, isSecondary: false);
         }
         foreach (var instance in state.SecondaryInstances)
         {
-            if (IsDisabled(instance)) continue;
-            var footprint = _footprintHandler.Of(instance.PayloadId);
-            if (checkSetsDefault && footprint.SetsDefault) continue;
-            var payloadData = _payloadRegistry.Get(instance.PayloadId).PayloadData;
-            if (!PassesContextCheck(payloadData)) continue;
-
-            double value = payloadData is StatStaticPayload or StatOverridePayload or StatContributionPayload
-                ? (instance.Secondary ?? instance.Primary)
-                : instance.Primary;
-
-            results.Add(new ValidPayloadContext 
-            { 
-                Instance = instance, 
-                PayloadData = payloadData, 
-                Value = value, 
-                IsSecondary = true 
-            });
+            ProcessInstance(instance, standard, scoped, isSecondary: true);
         }
     }
 
     private StatResult EvaluateStat(StatStateLane lane, StatState state, ref StatLaneResult laneResult)
     {
-        using var validPayloads = new PooledPayloadList(this);
-        GetValidPayloads(state, validPayloads.List);
-        ReadOnlySpan<ValidPayloadContext> standardPayloads = CollectionsMarshal.AsSpan(validPayloads.List);
+        if (state.HasNoModifiers)
+        {
+            laneResult.Result = StatResult.Seed(state.OriginalBaseValue);
+            return laneResult.Result;
+        }
+
+        if (state.HasOnlySourceValues)
+        {
+            ReadOnlySpan<ValidPayloadContext> emptyPayloads = ReadOnlySpan<ValidPayloadContext>.Empty;
+        
+            double sourceBaseValue = ResolveBaseValue(state, lane, emptyPayloads);
+            double flatValue = ResolveFlatValue(state, lane, emptyPayloads);
+
+            laneResult.Result = StatResult.Seed(sourceBaseValue).ApplyFlatValue(flatValue);
+            return laneResult.Result;
+        }
+
+        using var standardList = PooledPayloadList.Rent();
+        using var scopedList = PooledPayloadList.Rent();
+        GetValidPayloads(state, standardList.List, scopedList.List);
+        ReadOnlySpan<ValidPayloadContext> standardPayloads = CollectionsMarshal.AsSpan(standardList.List);
+        ReadOnlySpan<ValidPayloadContext> scopedPayloads = CollectionsMarshal.AsSpan(scopedList.List);
 
         double baseValue = ResolveBaseValue(state, lane, standardPayloads);
         laneResult.Result = StatResult.Seed(baseValue);
 
         double accumulatedFlatValue = ResolveFlatValue(state, lane, standardPayloads);
-        laneResult.Result = laneResult.Result.ApplyFlatValue(accumulatedFlatValue);
+        double accumulatedScopedFlatValue = ResolveScopedFlatValue(scopedPayloads);
+        laneResult.Result = laneResult.Result.ApplyFlatValue(accumulatedFlatValue + accumulatedScopedFlatValue);
 
         double? flatOverrideValue = ResolveFlatOverrideValue(state, standardPayloads);
         if (flatOverrideValue is { } resolvedFlatOverrideValue) laneResult.Result = laneResult.Result.ApplyFlatOverrideValue(resolvedFlatOverrideValue);
 
-        double accumulatedDerivedFlatValue = ResolveDerivedFlatValue(state, standardPayloads);
+        double accumulatedDerivedFlatValue = ResolveDerivedFlatValue(standardPayloads);
         laneResult.Result = laneResult.Result.ApplyDerivedPreConversionValue(accumulatedDerivedFlatValue);
 
-        double accumulatedConversionFlatValue = ResolveConversionFlatValue(state, laneResult.Result, standardPayloads);
-        laneResult.Result = laneResult.Result.ApplyConvertedValue(accumulatedConversionFlatValue);
+        var (accumulatedConversionSubtractedFlatValue, totalConversionDrainRatio, conversionNormalizationRatio) = ResolveConversionSubtractedFlatValue(state, laneResult.Result, standardPayloads);
+        laneResult.Result = laneResult.Result.ApplyConversionSubtractedValue(accumulatedConversionSubtractedFlatValue, totalConversionDrainRatio, conversionNormalizationRatio);
 
-        var (accumulatedRawAdditiveValue, accumulatedRawMultiplicativeValue) = ResolveMultiplierValue(state, standardPayloads);
-        laneResult.Result = laneResult.Result.ApplyRawMultiplierValue(accumulatedRawAdditiveValue, accumulatedRawMultiplicativeValue);
+        double accumulatedConversionGainedFlatValue = ResolveConversionGainedFlatValue(standardPayloads);
+        laneResult.Result = laneResult.Result.ApplyConversionGainedValue(accumulatedConversionGainedFlatValue);
 
-        var (accumulatedMirroredAdditiveValue, accumulatedMirroredMultiplicativeValue) = ResolveMirroredMultiplierValue(state, standardPayloads);
+        var (accumulatedRawAdditiveValue, accumulatedRawMultiplicativeValue) = ResolveMultiplierValue(standardPayloads);
+        var (accumulatedScopedAdditiveValue, accumulatedScopedMultiplicativeValue) = ResolveScopedMultiplierValue(scopedPayloads);
+        laneResult.Result = laneResult.Result.ApplyRawMultiplierValue(accumulatedRawAdditiveValue + accumulatedScopedAdditiveValue, accumulatedRawMultiplicativeValue, accumulatedScopedMultiplicativeValue);
+
+        var (accumulatedMirroredAdditiveValue, accumulatedMirroredMultiplicativeValue) = ResolveMirroredMultiplierValue(standardPayloads);
         laneResult.Result = laneResult.Result.ApplyMirroredMultiplierValue(accumulatedMirroredAdditiveValue, accumulatedMirroredMultiplicativeValue);
 
-        double accumulatedDerivedPostMultiplierValue = ResolveDerivedPostMultiplierValue(state, laneResult.Result, standardPayloads);
+        double accumulatedScopedDeltaValue = ResolveTargetScopedValue(state, lane, laneResult.Result, scopedPayloads);
+        laneResult.Result = laneResult.Result.ApplyTargetScopedValue(accumulatedScopedDeltaValue);
+
+        double accumulatedDerivedPostMultiplierValue = ResolveDerivedPostMultiplierValue(laneResult.Result, standardPayloads);
         laneResult.Result = laneResult.Result.ApplyDerivedPostMultiplierValue(accumulatedDerivedPostMultiplierValue);
 
-        double accumulatedDerivedFinalValue = ResolveDerivedResolvedValue(state, laneResult.Result, standardPayloads);
+        double accumulatedDerivedFinalValue = ResolveDerivedResolvedValue(laneResult.Result, standardPayloads);
         laneResult.Result = laneResult.Result.ApplyDerivedResolvedValue(accumulatedDerivedFinalValue);
 
         double? finalOverrideValue = ResolveFinalOverrideValue(state, standardPayloads);
@@ -432,8 +488,7 @@ public sealed partial class StatsComponent
 
         foreach (var context in standardPayloads)
         {
-            var footprint = _footprintHandler.Of(context.Instance.PayloadId);
-            if (footprint.SetsDefault)
+            if (context.SetsDefault)
             {
                 defaultOverrideCount++;
                 if (largestDefaultOverrideValue is null || context.Value > largestDefaultOverrideValue.Value) largestDefaultOverrideValue = context.Value;
@@ -470,18 +525,38 @@ public sealed partial class StatsComponent
         {
             accumulatedFlatValue += context.PayloadData switch
             {
-                StatStaticPayload staticPayload when staticPayload.StatStaticType == StatStaticType.Flat => 
+                StatStaticPayload { StatStaticType: StatStaticType.Flat } => 
                     context.Value,
 
-                StatContributionPayload contributionPayload when contributionPayload.StatStaticType == StatStaticType.Flat 
-                    && contributionPayload.ContributionSourceType == ContributionSourceType.StaticStat => 
-                        ResolveContributionSourceValue(contributionPayload) * context.Value,
+                StatContributionPayload { StatStaticType: StatStaticType.Flat, ContributionSourceType: ContributionSourceType.StaticStat } contributionPayload => 
+                    ResolveContributionSourceValue(contributionPayload) * context.Value,
 
                 _ => 0.0
             };
         }
 
         return accumulatedFlatValue;
+    }
+
+    private double ResolveScopedFlatValue(ReadOnlySpan<ValidPayloadContext> scopedPayloads)
+    {
+        double accumulatedScopedFlatValue = 0.0;
+
+        foreach (var context in scopedPayloads)
+        {
+            accumulatedScopedFlatValue += context.PayloadData switch
+            {
+                StatStaticPayload { StatStaticType: StatStaticType.Flat } => 
+                    context.Value,
+
+                StatContributionPayload { StatStaticType: StatStaticType.Flat, ContributionSourceType: ContributionSourceType.StaticStat } contributionPayload =>
+                    ResolveScopedContributionSourceValue(contributionPayload, contributionPayload.SourceRequirementTags) * context.Value,
+
+                _ => 0.0
+            };
+        }
+
+        return accumulatedScopedFlatValue;
     }
 
     private double? ResolveFlatOverrideValue(StatState state, ReadOnlySpan<ValidPayloadContext> standardPayloads)
@@ -491,7 +566,7 @@ public sealed partial class StatsComponent
 
         foreach (var context in standardPayloads)
         {
-            if (context.PayloadData is StatOverridePayload overridePayload && overridePayload.StatOverrideType == StatOverrideType.FlatOverride)
+            if (context.PayloadData is StatOverridePayload { StatOverrideType: StatOverrideType.FlatOverride } overridePayload)
             {
                 flatOverrideCount++;
                 double resolvedValue = overridePayload.SourceStatId is { } sourceStatId
@@ -509,10 +584,12 @@ public sealed partial class StatsComponent
             _errorConfig.ReportError(Source, message);
         }
 
+        state.FlatOverrideValue = largestFlatOverrideValue;
+
         return largestFlatOverrideValue;
     }
 
-    private double ResolveDerivedFlatValue(StatState state, ReadOnlySpan<ValidPayloadContext> standardPayloads)
+    private double ResolveDerivedFlatValue(ReadOnlySpan<ValidPayloadContext> standardPayloads)
     {
         double accumulatedDerivedFlatValue = 0.0;
 
@@ -520,10 +597,10 @@ public sealed partial class StatsComponent
         {
             accumulatedDerivedFlatValue += context.PayloadData switch
             {
-                StatTranslationPayload translationPayload when translationPayload.StatTranslationType == StatTranslationType.DerivationPreMultipliers => 
+                StatTranslationPayload { StatTranslationType: StatTranslationType.DerivationPreMultipliers } translationPayload => 
                     ResolveDerivedSourceValue(translationPayload) * context.Value,
 
-                StatMirrorPayload mirrorPayload when  mirrorPayload.StatStaticType == StatStaticType.Flat => 
+                StatMirrorPayload { StatStaticType: StatStaticType.Flat } mirrorPayload => 
                     ResolveMirrorSourceValue(mirrorPayload) * context.Value,
 
                 _ => 0.0,
@@ -533,30 +610,47 @@ public sealed partial class StatsComponent
         return accumulatedDerivedFlatValue;
     }
 
-    private double ResolveConversionFlatValue(StatState state, StatResult currentStatResult, ReadOnlySpan<ValidPayloadContext> standardPayloads)
+    private (double subtracted, double drain, double normalization) ResolveConversionSubtractedFlatValue(StatState state, StatResult currentStatResult, ReadOnlySpan<ValidPayloadContext> standardPayloads)
     {
-        double accumulatedConversionFlatValue = 0.0;
+        double accumulatedConversionSubtractedFlatValue = 0.0;
+        double totalConversionDrainRatio = 0.0;
+        double conversionNormalizationRatio = 1.0;
 
-        foreach (var context in standardPayloads)
-        {
-            if (context.PayloadData is StatTranslationPayload translationPayload &&  translationPayload.StatTranslationType == StatTranslationType.Conversion)
-                accumulatedConversionFlatValue += ResolveDerivedSourceValue(translationPayload) * context.Value;
-        }
-
-        using var validPayloads = new PooledPayloadList(this);
-        GetValidPayloads(state, validPayloads.List, drainsOnly: true);
+        using var validPayloads = PooledPayloadList.Rent();
+        GetValidPayloads(state, validPayloads.List, null, drainsOnly: true);
         ReadOnlySpan<ValidPayloadContext> drainInstancePayloads = CollectionsMarshal.AsSpan(validPayloads.List);
 
         foreach (var context in drainInstancePayloads)
         {
-            if (context.PayloadData is StatTranslationPayload translationPayload && translationPayload.StatTranslationType == StatTranslationType.Conversion)
-                accumulatedConversionFlatValue -= currentStatResult.DerivedPreConversionValue * context.Value;
+            if (context.PayloadData is StatTranslationPayload { StatTranslationType: StatTranslationType.Conversion } translationPayload)
+                totalConversionDrainRatio += context.Value;
         }
 
-        return accumulatedConversionFlatValue;
+        if (totalConversionDrainRatio > 1.0) conversionNormalizationRatio /= totalConversionDrainRatio;
+
+        foreach (var context in drainInstancePayloads)
+        {
+            if (context.PayloadData is StatTranslationPayload { StatTranslationType: StatTranslationType.Conversion } translationPayload)
+                accumulatedConversionSubtractedFlatValue -= currentStatResult.DerivedPreConversionValue * context.Value * conversionNormalizationRatio;
+        }
+
+        return (accumulatedConversionSubtractedFlatValue, totalConversionDrainRatio, conversionNormalizationRatio);
     }
 
-    private (double additive, double multiplicative) ResolveMultiplierValue(StatState state, ReadOnlySpan<ValidPayloadContext> standardPayloads)
+    private double ResolveConversionGainedFlatValue(ReadOnlySpan<ValidPayloadContext> standardPayloads)
+    {
+        double accumulatedConversionGainedFlatValue = 0.0;
+
+        foreach (var context in standardPayloads)
+        {
+            if (context.PayloadData is StatTranslationPayload { StatTranslationType: StatTranslationType.Conversion } translationPayload)
+                accumulatedConversionGainedFlatValue += ResolveConversionSourceValue(translationPayload) * context.Value;
+        }
+
+        return accumulatedConversionGainedFlatValue;
+    }
+
+    private (double additive, double multiplicative) ResolveMultiplierValue(ReadOnlySpan<ValidPayloadContext> standardPayloads)
     {
         double accumulatedRawAdditiveValue = 0.0;
         double accumulatedRawMultiplicativeValue = 1.0;
@@ -565,24 +659,22 @@ public sealed partial class StatsComponent
         {
             accumulatedRawAdditiveValue += context.PayloadData switch
             {
-                StatStaticPayload staticPayload when staticPayload.StatStaticType == StatStaticType.PercentAdditive =>
+                StatStaticPayload { StatStaticType: StatStaticType.PercentAdditive } =>
                     context.Value,
 
-                StatContributionPayload contributionPayload when contributionPayload.StatStaticType == StatStaticType.PercentAdditive 
-                    && contributionPayload.ContributionSourceType == ContributionSourceType.StaticStat =>
-                        ResolveContributionSourceValue(contributionPayload) * context.Value,
+                StatContributionPayload { StatStaticType: StatStaticType.PercentAdditive, ContributionSourceType: ContributionSourceType.StaticStat } contributionPayload =>
+                    ResolveContributionSourceValue(contributionPayload) * context.Value,
 
                 _ => 0.0
             };
 
             accumulatedRawMultiplicativeValue *= 1.0 + context.PayloadData switch
             {
-                StatStaticPayload staticPayload when staticPayload.StatStaticType == StatStaticType.PercentMultiplicative =>
+                StatStaticPayload { StatStaticType: StatStaticType.PercentMultiplicative } =>
                     context.Value,
 
-                StatContributionPayload contributionPayload when contributionPayload.StatStaticType == StatStaticType.PercentMultiplicative 
-                    && contributionPayload.ContributionSourceType == ContributionSourceType.StaticStat =>
-                        ResolveContributionSourceValue(contributionPayload) * context.Value,
+                StatContributionPayload { StatStaticType: StatStaticType.PercentMultiplicative, ContributionSourceType: ContributionSourceType.StaticStat } contributionPayload  =>
+                    ResolveContributionSourceValue(contributionPayload) * context.Value,
 
                 _ => 0.0
             };
@@ -591,49 +683,150 @@ public sealed partial class StatsComponent
         return (accumulatedRawAdditiveValue, accumulatedRawMultiplicativeValue - 1.0);
     }
 
-    private (double additive, double multiplicative) ResolveMirroredMultiplierValue(StatState state, ReadOnlySpan<ValidPayloadContext> standardPayloads)
+    private (double additive, double multiplicative) ResolveScopedMultiplierValue(ReadOnlySpan<ValidPayloadContext> scopedPayloads)
+    {
+        double accumulatedScopedAdditiveValue = 0.0;
+        double accumulatedScopedMultiplicativeValue = 1.0;
+
+        foreach (var context in scopedPayloads)
+        {
+            if (context.PayloadData is ITargetRequirementPayload { TargetRequirementTags.IsEmpty: false }) continue;
+
+            if (context.PayloadData is StatContributionPayload { StatStaticType: StatStaticType.PercentAdditive } contributionAdditivePayload)
+                accumulatedScopedAdditiveValue += ResolveScopedContributionSourceValue(contributionAdditivePayload, contributionAdditivePayload.SourceRequirementTags) * context.Value;
+            
+            if (context.PayloadData is StatContributionPayload { StatStaticType: StatStaticType.PercentMultiplicative } contributionMultiplicativePayload)
+                accumulatedScopedMultiplicativeValue *= 1.0 + ResolveScopedContributionSourceValue(contributionMultiplicativePayload, contributionMultiplicativePayload.SourceRequirementTags) * context.Value;
+        }
+
+        return (accumulatedScopedAdditiveValue, accumulatedScopedMultiplicativeValue - 1.0);
+    }
+
+    private (double additive, double multiplicative) ResolveMirroredMultiplierValue(ReadOnlySpan<ValidPayloadContext> standardPayloads)
     {
         double accumulatedMirroredAdditiveValue = 0.0;
         double accumulatedMirroredMultiplicativeValue = 1.0;
 
         foreach (var context in standardPayloads)
         {
-            if (context.PayloadData is StatMirrorPayload mirrorAdditivePayload &&  mirrorAdditivePayload.StatStaticType == StatStaticType.PercentAdditive)
+            if (context.PayloadData is StatMirrorPayload { StatStaticType: StatStaticType.PercentAdditive } mirrorAdditivePayload)
                 accumulatedMirroredAdditiveValue += ResolveMirrorSourceValue(mirrorAdditivePayload) * context.Value;
 
-            if (context.PayloadData is StatMirrorPayload mirrorMultiplicativePayload &&  mirrorMultiplicativePayload.StatStaticType == StatStaticType.PercentMultiplicative)
+            if (context.PayloadData is StatMirrorPayload { StatStaticType: StatStaticType.PercentMultiplicative } mirrorMultiplicativePayload)
                 accumulatedMirroredMultiplicativeValue *= 1.0 + ResolveMirrorSourceValue(mirrorMultiplicativePayload) * context.Value;
         }
 
         return (accumulatedMirroredAdditiveValue, accumulatedMirroredMultiplicativeValue - 1.0);
     }
 
-    private double ResolveDerivedPostMultiplierValue(StatState state, StatResult currentStatResult, ReadOnlySpan<ValidPayloadContext> standardPayloads)
+    private double ResolveTargetScopedValue(StatState state, StatStateLane lane, StatResult currentStatResult, ReadOnlySpan<ValidPayloadContext> scopedPayloads)
+    {
+        double ResolveTargetContributionQuantity(StatContributionPayload contributionPayload) => contributionPayload.SourceRequirementTags.IsEmpty
+            ? ResolveContributionSourceValue(contributionPayload)
+            : ResolveScopedContributionSourceValue(contributionPayload, contributionPayload.SourceRequirementTags);  
+
+        if (state.FlatOverrideValue.HasValue) return 0.0;
+
+        var sourceValues = state.SourceValues;
+        int sourceCount = sourceValues.Count;
+        if (sourceCount == 0) return 0.0;
+
+        Span<ScopedSourceStamp> sourceStamps = sourceCount <= 16 ? stackalloc ScopedSourceStamp[16] : new ScopedSourceStamp[sourceCount];
+        sourceStamps.Fill(ScopedSourceStamp.Identity);
+
+        bool hasStamp = false;
+
+        foreach(var context in scopedPayloads)
+        {
+            if (context.PayloadData is not ITargetRequirementPayload { TargetRequirementTags.IsEmpty: false } targetRequirementPayload) continue;
+
+            var (statStaticType, value, excludedTags) = context.PayloadData switch
+            {
+                StatStaticPayload staticPayload => (staticPayload.StatStaticType, context.Value, staticPayload.ExcludedTags),
+
+                StatContributionPayload { ContributionSourceType: ContributionSourceType.StaticStat } contributionPayload => 
+                    (contributionPayload.StatStaticType, ResolveTargetContributionQuantity(contributionPayload) * context.Value, contributionPayload.ExcludedTags),
+
+                _ => (StatStaticType.Flat, 0.0, ImmutableArray<TagId>.Empty)
+            };
+            if (statStaticType == StatStaticType.Flat) continue;
+
+            for (int i = 0; i < sourceCount; i++)
+            {
+                var sourceValue = sourceValues[i];
+
+                if (state.DefaultOverrideValue.HasValue && sourceValue.IsBase) continue;
+
+                if (!(sourceValue.Lane == StatStateLane.Default || sourceValue.Lane == lane)) continue;
+
+                if (sourceValue.SourceTags is not { IsEmpty: false } tags || !tags.Matches(targetRequirementPayload.TargetRequirementTags, excludedTags)) continue;
+
+                hasStamp = true;
+
+                sourceStamps[i].Apply(statStaticType, value);
+            }
+        }
+
+        if (!hasStamp) return 0.0;
+
+        double remainderAfterConversion = 1.0 - (currentStatResult.TotalConversionDrainRatio * currentStatResult.ConversionNormalizationRatio);
+
+        double resolvedTotal = 0.0;
+
+        for (int i = 0; i < sourceCount; i++) 
+        {
+            var sourceValue = sourceValues[i];
+
+            if (!(sourceValue.Lane == StatStateLane.Default || sourceValue.Lane == lane)) continue;
+
+            var sourceStamp = sourceStamps[i];
+
+            if (sourceStamp.Additive == 0.0 && Math.Abs(sourceStamp.More - 1.0) < 1e-9) continue;
+
+            double baselineValue = sourceValue.Value 
+                * (1.0 + currentStatResult.TotalAdditiveMultiplier) 
+                * (1.0 + currentStatResult.TotalMultiplicativeMultiplier) 
+                * remainderAfterConversion;
+            
+            double totalValue = sourceValue.Value 
+                * (1.0 + currentStatResult.TotalAdditiveMultiplier + sourceStamp.Additive) 
+                * (1.0 + currentStatResult.TotalMultiplicativeMultiplier) 
+                * sourceStamp.More 
+                * remainderAfterConversion;
+
+            resolvedTotal += totalValue - baselineValue;
+
+        }
+
+        return resolvedTotal;
+    }
+
+    private double ResolveDerivedPostMultiplierValue(StatResult currentStatResult, ReadOnlySpan<ValidPayloadContext> standardPayloads)
     {
         double accumulatedDerivedPostMultiplierValue = 0.0;
 
         foreach (var context in standardPayloads)
         {
-            if (context.PayloadData is StatTranslationPayload translationPayload &&  translationPayload.StatTranslationType == StatTranslationType.DerivationPostMultipliers)
+            if (context.PayloadData is StatTranslationPayload { StatTranslationType: StatTranslationType.DerivationPostMultipliers } translationPayload)
                 accumulatedDerivedPostMultiplierValue += ResolveDerivedSourceValue(translationPayload) * context.Value;
         }
 
-        accumulatedDerivedPostMultiplierValue *= (1.0 + currentStatResult.MirroredAdditiveMultiplier) * (1.0 + currentStatResult.MirroredMultiplicativeMultiplier);
+        accumulatedDerivedPostMultiplierValue *= (1.0 + currentStatResult.TotalAdditiveMultiplier) * (1.0 + currentStatResult.TotalMultiplicativeMultiplier);
 
         return accumulatedDerivedPostMultiplierValue;
     }
 
-    private double ResolveDerivedResolvedValue(StatState state, StatResult currentStatResult, ReadOnlySpan<ValidPayloadContext> standardPayloads)
+    private double ResolveDerivedResolvedValue(StatResult currentStatResult, ReadOnlySpan<ValidPayloadContext> standardPayloads)
     {
         double accumulatedDerivedFinalValue = 0.0;
 
         foreach (var context in standardPayloads)
         {
-            if (context.PayloadData is StatTranslationPayload translationPayload &&  translationPayload.StatTranslationType == StatTranslationType.DerivationLast)
+            if (context.PayloadData is StatTranslationPayload { StatTranslationType: StatTranslationType.DerivationLast } translationPayload)
                 accumulatedDerivedFinalValue += ResolveDerivedSourceValue(translationPayload) * context.Value;
         }
 
-        accumulatedDerivedFinalValue *= (1.0 + currentStatResult.MirroredAdditiveMultiplier) * (1.0 + currentStatResult.MirroredMultiplicativeMultiplier);
+        accumulatedDerivedFinalValue *= (1.0 + currentStatResult.TotalAdditiveMultiplier) * (1.0 + currentStatResult.TotalMultiplicativeMultiplier);
 
         return accumulatedDerivedFinalValue;
     }
@@ -645,7 +838,7 @@ public sealed partial class StatsComponent
 
         foreach (var context in standardPayloads)
         {
-            if (context.PayloadData is StatOverridePayload overridePayload && overridePayload.StatOverrideType == StatOverrideType.FinalOverride)
+            if (context.PayloadData is StatOverridePayload { StatOverrideType: StatOverrideType.FinalOverride } overridePayload)
             {
                 finalOverrideCount++;
                 double resolvedValue = overridePayload.SourceStatId is { } sourceStatId
@@ -662,6 +855,8 @@ public sealed partial class StatsComponent
             var message = $"Stat '{statId}' has {finalOverrideCount} final override instances. Applying the largest value ({largestFinalOverrideValue}).";
             _errorConfig.ReportError(Source, message);
         }
+
+        state.FinalOverrideValue = largestFinalOverrideValue;
 
         return largestFinalOverrideValue;
     }
@@ -687,6 +882,15 @@ public sealed partial class StatsComponent
         return sourceValue;
     }
 
+    private double ResolveScopedContributionSourceValue(StatContributionPayload contributionPayload, TagFilter requirementFilter)
+    {
+        var (laneA, laneB) = GetValidSourceValueSum(_states[contributionPayload.SourceStatId], requirementFilter, contributionPayload.ExcludedTags);
+
+        double sourceValue = AverageLanes(laneA, laneB);
+
+        return sourceValue;
+    }
+
     private double ResolveDerivedSourceValue(StatTranslationPayload translationPayload)
     {
         var (laneA, laneB) = GetStatResultsAcrossLanes(translationPayload.SourceStatId);
@@ -705,6 +909,20 @@ public sealed partial class StatsComponent
         };
 
         return sourceValue;
+    }
+
+    private double ResolveConversionSourceValue(StatTranslationPayload conversionPayload)
+    {
+        var (laneA, laneB) = GetStatResultsAcrossLanes(conversionPayload.SourceStatId);
+
+        double conversionNormalizationRatio = AverageLanes(laneA.ConversionNormalizationRatio, laneB?.ConversionNormalizationRatio);
+
+        double sourceValue = AverageLanes(laneA.DerivedPreConversionValue, laneB?.DerivedPreConversionValue);
+
+        double normalizedSourceValue = sourceValue * conversionNormalizationRatio;
+
+        return normalizedSourceValue;
+
     }
 
     private double ResolveMirrorSourceValue(StatMirrorPayload mirrorPayload)

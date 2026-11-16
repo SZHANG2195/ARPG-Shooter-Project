@@ -5,14 +5,14 @@ using lethal.core.domain.stats;
 using lethal.core.domain.tags;
 
 namespace lethal.core.domain.payloads;
-public sealed record StatStaticPayload : IPayload, IContextualPayload
+public sealed record StatStaticPayload : IPayload, IContextualPayload, ITargetRequirementPayload
 {
 	public required StatStaticType StatStaticType { get; init; }
     public required EffectScope EffectScope { get; init; }
     public ContextId? ContextId { get; init; }
     public StatId? TargetStatId { get; init; }
     public TagFilter TargetTags { get; init; } = TagFilter.Empty;
-    public TagFilter RequirementTags { get; init; } = TagFilter.Empty;
+    public TagFilter TargetRequirementTags { get; init; } = TagFilter.Empty;
     public ImmutableArray<TagId> ExcludedTags { get; init; } = ImmutableArray<TagId>.Empty;
     public bool TargetWithoutCounterpart { get; init; } = false;
     public required double PrimaryMinValue { get; init; }
