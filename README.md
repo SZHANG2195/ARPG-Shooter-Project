@@ -1,17 +1,18 @@
-# Data-Driven ARPG Calculation Engine
+# Data-Driven ARPG Prototype - Core Stats
 
-A modular C# stat calculation engine designed for top-down action RPGs, featuring automated CSV data ingestion and a multi-pass evaluation pipeline built to handle complex modifier dependency trees.
+The core stats and modifier pipeline for a custom-built Action RPG prototype, featuring a reactive dependency graph and PoE-inspired scaling mechanics.
 
 ## Core Features & Architecture
 
-- **Automated Ingestion Pipeline:** Parses CSV game configurations into local relational structures for runtime entity generation, utilizing lookahead regex splitting to preserve quoted multi-select dropdown fields.
-- **Two-Pass Bitmask Evaluation:** Isolates primary attributes (Strength, Agility, Intelligence) into a pre-computation pass using bitmask flags and dependency isolation, preventing recursive loops during modifier resolution.
-- **Complex Stat Scaling:** Supports flat additions, additive percent chains (`Increased`), and multiplicative scaling chains (`More`) modeled after Path of Exile 2 mechanics.
-- **Secondary Threshold Resolution:** Computes post-multiplier derived stats and dynamic gameplay thresholds (e.g., status ailment and stun thresholds based on max health pool).
+- **Dependency Graph & Granular Invalidation:** Utilizes a topological sorting StatGraph and surgical dirty-flagging (_statGraph.CollectDependents). Changes to stats or equipment invalidate only downstream dependencies rather than triggering expensive global recalculations.
+- **Two-Tier Performance Model:** Incurs a brief 1–7.6 ms resolution cost only when a stat's dependencies change, while serving continuous combat queries via a sub-microsecond (~0.087 µs) cached read path.
+- **Advanced Modifier Pipeline:** Supports flat additions, default overrides, flat overrides, conversions, raw/mirrored/scoped percent-additive (Increased) chains, and multiplicative (More) scaling chains.
+- **Dynamic Derivation & Thresholds:** Automatically computes derived stats and gameplay thresholds (e.g., dynamic stun thresholds derived from health pools) across isolated stat state lanes (Mainhand, Offhand, Default).
+- **Zero-Allocation Data Paths:** Leverages readonly record struct snapshots (StatResult), pooled payload lists (PooledPayloadList), and ReadOnlySpan<T> processing to eliminate garbage collection pressure during active gameplay.
 
 ## Tech Stack
-- **Language:** C#
+- **Language:** C# (.NET)
 - **Engine / Environment:** Godot
-- **Data Storage & Ingestion:** SQLite, CSV (Migrating to PostgreSQL Database)
+- **Data & Sync Layer:** PostgreSQL (Supabase), SQLite local cache, and automated JSON payload registries
 - 
 ## Currently WIP
