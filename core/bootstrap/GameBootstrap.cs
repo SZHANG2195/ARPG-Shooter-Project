@@ -38,8 +38,16 @@ public partial class GameBootstrap : Node
             GD.Print($"[GameData]: {data.Summary()}");
 
             if (OS.IsDebugBuild()) {
+                PrintDivider("GameDataSmokeTest");
                 GameDataSmokeTest.Run(data);
+
+                PrintDivider("StatsComponentSmokeTest :: Run 1 (cold — JIT + pool warmup)");
                 StatsComponentSmokeTest.Run(data, globalConfig);
+
+                PrintDivider("StatsComponentSmokeTest :: Run 2 (warm — steady state)");
+                StatsComponentSmokeTest.Run(data, globalConfig);
+
+                PrintDivider("Smoke tests complete");
             }
             stopwatch.Stop();
 
@@ -52,5 +60,13 @@ public partial class GameBootstrap : Node
             GD.PrintErr($"[{Source}]: Bootstrap failed after {stopwatch.ElapsedMilliseconds} ms: {exception}");
             BootstrapReady.TrySetException(exception);
         }
+    }
+
+    private static void PrintDivider(string label, char glyph = '─', int width = 60)
+    {
+        var line = new string(glyph, width);
+        GD.Print(line);
+        GD.Print($"{glyph} {label} {new string(glyph, Math.Max(0, width - label.Length - 3))}");
+        GD.Print(line);
     }
 }

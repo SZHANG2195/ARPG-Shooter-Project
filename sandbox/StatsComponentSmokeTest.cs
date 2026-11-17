@@ -10,7 +10,7 @@ using lethal.common.registries;
 using lethal.gameplay.payloads.enums;
 using lethal.core.domain.payloads;
 using System;
-using static lethal.gameplay.stats.components.StatsComponent;
+using System.Diagnostics;
 
 public static class StatsComponentSmokeTest
 {
@@ -44,12 +44,25 @@ public static class StatsComponentSmokeTest
         // (Assuming you have a way to inspect or query the initial state/default lane base value)
         GD.Print("[StatsSmokeTest] StatsComponent successfully created.");
 
+        var noModifierStopWatch = Stopwatch.StartNew();
         Check(stats.GetStatResult(SmokeIds.MaxHealth).FinalValue == 100, "max_health inherited from player_base");
+        noModifierStopWatch.Stop();
 
+        double totalMsClean = noModifierStopWatch.Elapsed.TotalMicroseconds; 
+        double totalTicksClean = noModifierStopWatch.ElapsedTicks;
+        GD.Print($"[Benchmark] Clean Evaluation time: {totalMsClean:F3} microseconds. Total ticks: {totalTicksClean}");
+
+        var dirtyStopWatch = Stopwatch.StartNew();
         double bonus = data.Payloads.GetData<StatStaticPayload>(SmokeIds.MoveSpeedImplicit).PrimaryMaxValue;
         var instance = new StatPayloadInstance(SmokeIds.MoveSpeedImplicit, bonus, null, handle, TagSet.Empty);
         stats.InstallSource(handle, TagSet.Empty, [instance], []);
         Check(Approximately(stats.GetStatResult(SmokeIds.MovementSpeed).FinalValue, 1.0 * (1 + bonus)), "increased movement speed applies");
+        dirtyStopWatch.Stop();
+
+        double totalMsDirty = dirtyStopWatch.Elapsed.TotalMicroseconds; 
+        double totalTicksDirty = dirtyStopWatch.ElapsedTicks;
+        GD.Print($"[Benchmark] Dirty Evaluation time: {totalMsDirty:F3} microseconds. Total ticks: {totalTicksDirty}");
+
         stats.GetStatResult(SmokeIds.MovementSpeed).PrintDebug("Movement Speed");
         stats.RemoveSource(handle);
         Check(Approximately(stats.GetStatResult(SmokeIds.MovementSpeed).FinalValue, 1.0), "removing the source restores the default");
@@ -57,17 +70,62 @@ public static class StatsComponentSmokeTest
         double ratio = data.Payloads.GetData<StatTranslationPayload>(SmokeIds.StunFromHealth).TranslationMinRatio;
         var defaultHandle = new PayloadSourceHandle(SourceKind.Character, 2);
         var defaultInstance = new StatPayloadInstance(SmokeIds.StunFromHealth, ratio, null, defaultHandle, TagSet.Empty);
+
+        var pureInstallStopWatch = Stopwatch.StartNew();
         stats.InstallSource(defaultHandle, TagSet.Empty, [defaultInstance], []);
+        pureInstallStopWatch.Stop();
+
+        double totalMsPureInstall = pureInstallStopWatch.Elapsed.TotalMicroseconds; 
+        double totalTicksPureInstall = pureInstallStopWatch.ElapsedTicks;
+
+        GD.Print($"[Benchmark] Pure Install time: {totalMsPureInstall:F3} microseconds. Total ticks: {totalTicksPureInstall}");
+
+        var pureRecalcStopWatch = Stopwatch.StartNew();
         Check(Approximately(stats.GetStatResult(SmokeIds.StunThreshold).FinalValue, 100.0), "default stun threshold applies");
+        pureRecalcStopWatch.Stop();
+
+        double totalMsPure = pureRecalcStopWatch.Elapsed.TotalMicroseconds; 
+        double totalTicksPure = pureRecalcStopWatch.ElapsedTicks;
+
+        GD.Print($"[Benchmark] Pure Evaluation time: {totalMsPure:F3} microseconds. Total ticks: {totalTicksPure}");
+
+
         stats.GetStatResult(SmokeIds.StunThreshold).PrintDebug("Stun Threshold");
+        
+        var removeStopWatch = Stopwatch.StartNew();
         stats.RemoveSource(defaultHandle);
+        removeStopWatch.Stop();
+
+        double totalMsRemove = removeStopWatch.Elapsed.Microseconds; 
+        double totalTicksRemove = removeStopWatch.ElapsedTicks;
+
+        GD.Print($"[Benchmark] Removal time: {totalMsRemove:F3} microseconds. Total ticks: {totalTicksRemove}");
+
         Check(Approximately(stats.GetStatResult(SmokeIds.StunThreshold).FinalValue, 0.0), "removing the source restores the default");
 
         var boots = data.Tags.Expand([new TagId("item.category.equipment.armour.boots")]);
         var bootsHandle = new PayloadSourceHandle(SourceKind.Equipment, 3);
         var bootsStatSourceValue = new StatSourceValue(bootsHandle, SmokeIds.ArmourRating, 200, false, StatStateLane.Default, boots);
+
+        var pureInstallStopWatch2 = Stopwatch.StartNew();
         stats.InstallSource(bootsHandle, boots, [], [bootsStatSourceValue]);
+        pureInstallStopWatch2.Stop();
+
+        double totalMsPureInstall2 = pureInstallStopWatch2.Elapsed.Microseconds; 
+        double totalTicksPureInstall2 = pureInstallStopWatch2.ElapsedTicks;
+
+        GD.Print($"[Benchmark] Pure Install time # 2: {totalMsPureInstall2:F3} microseconds. Total ticks: {totalTicksPureInstall2}");
+
+        var pureRecalcStopWatch2 = Stopwatch.StartNew();
         Check(Approximately(stats.GetStatResult(SmokeIds.ArmourRating).FinalValue, 200.0), "boots armour rating applies");
+        pureRecalcStopWatch2.Stop();
+
+        double totalMsPure2 = pureRecalcStopWatch2.Elapsed.TotalMicroseconds; 
+        double totalTicksPure2 = pureRecalcStopWatch2.ElapsedTicks;
+
+        GD.Print($"[Benchmark] Pure Evaluation time: {totalMsPure2:F3} microseconds. Total ticks: {totalTicksPure2}");
+
+
         stats.GetStatResult(SmokeIds.ArmourRating).PrintDebug("Armour Rating");
 
         double bootsBonus = data.Payloads.GetData<StatStaticPayload>(SmokeIds.BootsArmour).PrimaryMaxValue;
@@ -89,6 +147,19 @@ public static class StatsComponentSmokeTest
         stats.RemoveSource(helmetHandle);
         stats.RemoveSource(increasedBootsHandle);
         Check(Approximately(stats.GetStatResult(SmokeIds.ArmourRating).FinalValue, 0.0), "removing the source restores the default");
+
+        var stopwatch = Stopwatch.StartNew();
+        int iterations = 1000;
+        for (int i = 0; i < iterations; i++)
+        {
+            var result = stats.GetStatResult(SmokeIds.MovementSpeed);
+        }
+        stopwatch.Stop();
+
+        double avgMicroseconds = stopwatch.Elapsed.TotalMilliseconds * 1000.0 / iterations;
+
+        GD.Print($"[Benchmark] {iterations} stat evaluations took {stopwatch.Elapsed.TotalMilliseconds:F4} ms total.");
+        GD.Print($"[Benchmark] Average time per evaluation: {avgMicroseconds:F3} microseconds.");
 
         GD.Print("[StatsSmokeTest] All smoke test assertions completed.");
     }
