@@ -99,7 +99,7 @@ public sealed partial class StatsComponent
 
 		public StatResult ApplyRawMultiplierValue(double rawAdditiveMultiplierValue, double rawMultiplicativeMultiplierValue, double scopedMultiplicativeMultiplierValue)
 		{
-			double totalRawMultiplicativeMultiplierValue = (1.0 + rawMultiplicativeMultiplierValue) * (1.0 + scopedMultiplicativeMultiplierValue);
+			double totalRawMultiplicativeMultiplierValue = (1.0 + rawMultiplicativeMultiplierValue) * (1.0 + scopedMultiplicativeMultiplierValue) - 1.0;
 			return this with
 			{
 				RawAdditiveMultiplier = rawAdditiveMultiplierValue,
